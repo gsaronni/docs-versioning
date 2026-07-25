@@ -436,4 +436,60 @@ function Invoke-FileRestore {
     }
 }
 
+function Invoke-DocsUpdate {
+    param(
+        [string]$ScriptRoot,
+        [scriptblock]$LogAction
+    )
+
+    function Send-Log { param($Line, [switch]$IsWarning)
+        $prefix = if ($IsWarning) { "WARNING: " } else { "" }
+        & $LogAction "$prefix$Line"
+    }
+    function Send-Progress { param([int]$Pct) & $LogAction "PROGRESS:$Pct" }
+
+    $RepoRoot  = Split-Path $ScriptRoot -Parent
+    $GiteaHost = '192.0.2.10'   
+    $GiteaPort = 222             
+
+    Send-Progress 0
+    $reachable = Test-NetConnection -ComputerName $GiteaHost -Port $GiteaPort `
+                    -WarningAction SilentlyContinue -InformationLevel Quiet
+    if (-not $reachable) {
+        Send-Log "Unreachable — connect to Netbird and try again." -IsWarning
+        return $false
+    }
+
+    Send-Progress 25
+    Send-Log "Forcing local copy to match origin/main — any local changes will be discarded." -IsWarning
+
+    Push-Location $RepoRoot
+    try {
+        git fetch origin 2>&1 | ForEach-Object { Send-Log $_ }
+        if ($LASTEXITCODE -ne 0) { Send-Log "git fetch failed (exit $LASTEXITCODE)" -IsWarning; return $false }
+
+        Send-Progress 50
+        git reset --hard origin/main 2>&1 | ForEach-Object { Send-Log $_ }
+        if ($LASTEXITCODE -ne 0) { Send-Log "git reset failed (exit $LASTEXITCODE)" -IsWarning; return $false }
+
+        git clean -fd 2>&1 | ForEach-Object { Send-Log $_ }
+    } finally {
+        Pop-Location
+    }
+
+    Send-Progress 75
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $shortcutPath = Join-Path $desktop 'Backup Helper.lnk'
+    if (-not (Test-Path $shortcutPath)) {
+        Send-Log "Shortcut missing — regenerating."
+        & (Join-Path $ScriptRoot 'create-shortcut.ps1')
+    }
+
+    $testArgs = if ($env:BACKUP_HELPER_TEST_MODE -eq "1") { @("-Test") } else { @() }
+    & (Join-Path $ScriptRoot 'setup-scheduled-task.ps1') @testArgs 2>&1 | ForEach-Object { Send-Log $_ }
+
+    Send-Progress 100
+    return $true
+}
+
 Export-ModuleMember -Function *

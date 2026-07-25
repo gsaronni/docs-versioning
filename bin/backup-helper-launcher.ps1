@@ -52,6 +52,32 @@ $btnStop.Location = New-Object System.Drawing.Point(20, 65)
 $btnStop.Enabled = $false
 $form.Controls.Add($btnStop)
 
+$btnUpdate = New-Object System.Windows.Forms.Button
+$btnUpdate.Text = "Update"
+$btnUpdate.Size = New-Object System.Drawing.Size(100, 30)
+$btnUpdate.Location = New-Object System.Drawing.Point(360, 65)
+$form.Controls.Add($btnUpdate)
+
+# Must join the same group Backup/Restore/Find are in, so it disables
+# them during an update and vice versa.
+$AllButtons = @($btnBackup, $btnRestore, $btnFind, $btnUpdate)
+
+$btnUpdate.Add_Click({
+    try {
+        Start-BackgroundOperation -OperationName "Update" -Operation {
+            param($ScriptRoot, $LogQueue)
+            Import-Module (Join-Path $ScriptRoot "..\lib\backup-common.psm1") -Force
+            $LogAction = { param($line) $LogQueue.Enqueue([string]$line) }
+            Invoke-DocsUpdate -ScriptRoot $ScriptRoot -LogAction $LogAction
+        }
+    } catch {
+        foreach ($b in $AllButtons) { $b.Enabled = $true }
+        $btnStop.Enabled = $false
+        $statusLabel.Text = "Ready"
+        [System.Windows.Forms.MessageBox]::Show("Something went wrong:`r`n`r`n$($_.Exception.Message)", "Error", "OK", "Error") | Out-Null
+    }
+})
+
 $statusLabel = New-Object System.Windows.Forms.Label
 $statusLabel.Text = "Ready"
 $statusLabel.AutoSize = $true
