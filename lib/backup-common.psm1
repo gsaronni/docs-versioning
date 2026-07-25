@@ -1,0 +1,439 @@
+<#
+=============================================================================
+ backup-common.psm1
+ Real shared logic — backup, restore, search — used by BOTH the CLI
+ scripts and the GUI, via a -LogAction callback each caller supplies.
+=============================================================================
+#>
+
+# PowerShell 7.3+ can convert a native command's nonzero exit code into an
+# actual PowerShell error (per $ErrorActionPreference) — restic routinely
+# returns nonzero for benign warnings, and that conversion was crashing the
+# GUI when triggered from inside a WinForms event-callback context.
+$global:PSNativeCommandUseErrorActionPreference = $false
+
+function Import-BackupConfig {
+    param([string]$ScriptRoot)
+    $ConfigName = if ($env:BACKUP_HELPER_TEST_MODE -eq "1") { "backup-config.test.psd1" } else { "backup-config.psd1" }
+    $ConfigPath = Join-Path $ScriptRoot "..\etc\$ConfigName"
+    if (-not (Test-Path $ConfigPath)) {
+        throw "Config file not found: $ConfigPath (copy backup-config.template.psd1 to $ConfigName and edit the paths)"
+    }
+    $cfg = Import-PowerShellDataFile $ConfigPath
+
+    if ([string]::IsNullOrWhiteSpace($cfg.SourcePath)) {
+        $cfg.SourcePath = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "2026"
+    }
+    if ([string]::IsNullOrWhiteSpace($cfg.PasswordFile)) {
+        $cfg.PasswordFile = Join-Path $ScriptRoot "..\etc\restic-repo.key"
+    }
+
+    $env:RESTIC_REPOSITORY    = $cfg.LocalRepoPath
+    $env:RESTIC_PASSWORD_FILE = $cfg.PasswordFile
+    return $cfg
+}
+
+function Test-ResticAvailable {
+    return [bool](Get-Command restic -ErrorAction SilentlyContinue)
+}
+
+function Get-ExternalDrivePath {
+    param([string]$Label, [string]$Subpath)
+    $vol = Get-Volume -FileSystemLabel $Label -ErrorAction SilentlyContinue
+    if ($vol -and $vol.DriveLetter) {
+        return "$($vol.DriveLetter):\$Subpath"
+    }
+    return $null
+}
+
+function ConvertTo-ResticInternalPath {
+    param([string]$WindowsPath)
+    if ($WindowsPath -match '^([A-Za-z]):\\(.*)$') {
+        return "/$($Matches[1].ToUpper())/$($Matches[2] -replace '\\','/')"
+    }
+    return $WindowsPath -replace '\\', '/'
+}
+
+function Sync-ExternalRepo {
+    param($cfg, [string]$Tag, [scriptblock]$LogAction, [switch]$DryRun)
+
+    $extPath = Get-ExternalDrivePath -Label $cfg.ExternalDriveLabel -Subpath $cfg.ExternalRepoSubpath
+    if (-not $extPath) {
+        & $LogAction "External drive ($($cfg.ExternalDriveLabel)) not connected — skipping, will retry next run"
+        return $true
+    }
+
+    & $LogAction "External drive detected at $extPath"
+    & restic -r $extPath --password-file $cfg.PasswordFile snapshots --json 2>&1 | Out-Null
+    $extRepoExists = $LASTEXITCODE -eq 0
+
+    if (-not $extRepoExists) {
+        & $LogAction "External repo not found — initializing (matching chunker params to local repo)"
+        if (-not $DryRun) {
+            $initArgs = @(
+                "-r", $extPath, "--password-file", $cfg.PasswordFile, "init",
+                "--from-repo", $cfg.LocalRepoPath, "--from-password-file", $cfg.PasswordFile,
+                "--copy-chunker-params"
+            )
+            $initExit = Invoke-LoggedRestic -ResticArgs $initArgs -LogAction $LogAction
+            if ($initExit -ne 0) { & $LogAction "ERROR: external repo init failed (see restic output above)"; return $false }
+            & $LogAction "External repo initialized"
+        }
+    }
+
+    if (-not $DryRun) {
+        $copyArgs = @(
+            "copy", "-r", $extPath, "--password-file", $cfg.PasswordFile,
+            "--from-repo", $cfg.LocalRepoPath, "--from-password-file", $cfg.PasswordFile,
+            "--tag", $Tag
+        )
+        Invoke-LoggedRestic -ResticArgs $copyArgs -LogAction $LogAction | Out-Null
+    }
+    return $true
+}
+
+function Test-BackupConfigReady {
+    param([string]$ScriptRoot)
+    $cfg = Import-BackupConfig -ScriptRoot $ScriptRoot
+    if (-not (Test-ResticAvailable)) { return "The backup tool (restic) isn't installed." }
+    if (-not (Test-Path $cfg.SourcePath)) { return "Source folder doesn't exist: $($cfg.SourcePath)" }
+    $localDriveRoot = Split-Path -Qualifier $cfg.LocalRepoPath
+    if (-not (Test-Path $localDriveRoot)) { return "$localDriveRoot isn't accessible." }
+    if (-not (Test-Path $cfg.PasswordFile)) { return "Password file not found: $($cfg.PasswordFile)" }
+    return $null
+}
+
+function Test-AnyRepoExists {
+    param([string]$ScriptRoot)
+    Import-BackupConfig -ScriptRoot $ScriptRoot | Out-Null
+    & restic snapshots --tag docs-daily --json 2>&1 | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Test-AlreadyRanToday {
+    param([string]$Tag)
+    $Today = Get-Date -Format "yyyy-MM-dd"
+    $json = & restic snapshots --tag $Tag --latest 1 --json 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $json) { return $false }
+    $snaps = $json | ConvertFrom-Json
+    if (-not $snaps -or $snaps.Count -eq 0) { return $false }
+    $lastDate = ([datetime]$snaps[0].time).ToString("yyyy-MM-dd")
+    return ($lastDate -eq $Today)
+}
+
+# Checks the LATEST snapshot's restore size against free space at the
+# restore destination. Returns $null if it couldn't be determined (fails
+# open — never blocks a restore over an inconclusive check).
+function Test-EnoughRestoreSpace {
+    param([string]$ScriptRoot)
+    Import-BackupConfig -ScriptRoot $ScriptRoot | Out-Null
+
+    $statsJson = & restic stats latest --tag docs-daily --mode restore-size --json 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $statsJson) { return $null }
+    $stats = $statsJson | ConvertFrom-Json
+    $neededBytes = $stats.total_size
+
+    $desktopPath = [Environment]::GetFolderPath("Desktop")
+    $driveLetter = (Get-Item $desktopPath).PSDrive.Name
+    $drive = Get-PSDrive -Name $driveLetter -ErrorAction SilentlyContinue
+    if (-not $drive) { return $null }
+    $freeBytes = $drive.Free
+
+    [PSCustomObject]@{
+        NeededBytes = $neededBytes
+        FreeBytes   = $freeBytes
+        Enough      = ($freeBytes -gt ($neededBytes * 1.1))  # 10% safety margin
+    }
+}
+
+function Invoke-LoggedRestic {
+    param([string[]]$ResticArgs, [scriptblock]$LogAction)
+    & restic @ResticArgs 2>&1 | ForEach-Object { & $LogAction $_ }
+    return $LASTEXITCODE
+}
+
+# =============================================================================
+# BACKUP — uses --json so we get real percent_done progress; --json replaces
+# restic's normal human text entirely, so we reconstruct a readable summary
+# line ourselves from the structured "summary" message once it arrives.
+# =============================================================================
+
+function Invoke-DocumentBackup {
+    param(
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [Parameter(Mandatory)][scriptblock]$LogAction,
+        [switch]$DryRun
+    )
+
+    $cfg = Import-BackupConfig -ScriptRoot $ScriptRoot
+    $Tag = "docs-daily"
+
+    if (-not (Test-ResticAvailable)) {
+        & $LogAction "ERROR: restic not found in PATH."
+        return $false
+    }
+    if (-not (Test-Path $cfg.SourcePath)) {
+        & $LogAction "ERROR: Source path does not exist: $($cfg.SourcePath)"
+        return $false
+    }
+    $localDriveRoot = Split-Path -Qualifier $cfg.LocalRepoPath
+    if (-not (Test-Path $localDriveRoot)) {
+        & $LogAction "ERROR: $localDriveRoot is not accessible."
+        return $false
+    }
+    if (-not (Test-Path $cfg.PasswordFile)) {
+        & $LogAction "ERROR: Password file not found: $($cfg.PasswordFile)"
+        return $false
+    }
+
+    & $LogAction "Checking local repo at $($cfg.LocalRepoPath)"
+    & restic snapshots --json 2>&1 | Out-Null
+    $repoExists = $LASTEXITCODE -eq 0
+
+    if (-not $repoExists) {
+        & $LogAction "Local repo not found — initializing"
+        if (-not $DryRun) {
+            & restic init
+            if ($LASTEXITCODE -ne 0) { & $LogAction "ERROR: restic init failed"; return $false }
+            & $LogAction "Local repo initialized"
+        }
+    } else {
+        & $LogAction "Local repo already exists"
+    }
+
+    $alreadyRanToday = Test-AlreadyRanToday -Tag $Tag
+    if ($alreadyRanToday -and -not $DryRun) {
+        & $LogAction "Latest snapshot already dated today — nothing to back up. Checking external drive."
+        Sync-ExternalRepo -cfg $cfg -Tag $Tag -LogAction $LogAction -DryRun:$DryRun | Out-Null
+        return $true
+    }
+
+    & $LogAction "Starting backup of $($cfg.SourcePath)"
+    $backupArgs = @("backup", $cfg.SourcePath, "--tag", $Tag, "--skip-if-unchanged", "--json")
+    if ($DryRun) { $backupArgs += "--dry-run" }
+
+    & restic @backupArgs 2>&1 | ForEach-Object {
+        $line = [string]$_
+        $obj = $null
+        try { $obj = $line | ConvertFrom-Json -ErrorAction Stop } catch { $obj = $null }
+
+        if ($obj -and $obj.message_type -eq "status") {
+            & $LogAction "PROGRESS:$([math]::Round($obj.percent_done * 100))"
+        } elseif ($obj -and $obj.message_type -eq "summary") {
+            $addedGB = [math]::Round($obj.data_added / 1GB, 3)
+            & $LogAction "Added $($obj.files_new) new, $($obj.files_changed) changed file(s) — $addedGB GiB added to the repository."
+            if ($obj.snapshot_id) { & $LogAction "Snapshot $($obj.snapshot_id) saved." }
+        } elseif ($obj -and $obj.message_type -eq "error") {
+            & $LogAction "ERROR: $($obj.error.message)"
+        } elseif ($line) {
+            & $LogAction $line
+        }
+    }
+    $backupExit = $LASTEXITCODE
+
+    if ($backupExit -eq 3) {
+        # Exit code 3 = some source files couldn't be read, but the backup
+        # otherwise completed and a snapshot was created — not a real failure.
+        & $LogAction "WARNING: some source files could not be read, but the backup otherwise completed."
+    } elseif ($backupExit -ne 0) {
+        & $LogAction "ERROR: backup exited with code $backupExit"
+        return $false
+    }
+    & $LogAction "Backup completed successfully"
+
+    & $LogAction "Applying retention (keep-daily=$($cfg.KeepDaily) keep-weekly=$($cfg.KeepWeekly) keep-monthly=$($cfg.KeepMonthly))"
+    $forgetArgs = @("forget", "--tag", $Tag, "--keep-daily", $cfg.KeepDaily, "--keep-weekly", $cfg.KeepWeekly, "--keep-monthly", $cfg.KeepMonthly, "--prune")
+    if ($DryRun) { $forgetArgs += "--dry-run" }
+    Invoke-LoggedRestic -ResticArgs $forgetArgs -LogAction $LogAction | Out-Null
+
+    Sync-ExternalRepo -cfg $cfg -Tag $Tag -LogAction $LogAction -DryRun:$DryRun | Out-Null
+
+    return $true
+}
+
+# =============================================================================
+# RESTORE LATEST — same --json progress approach. Emits a RESTORE_TARGET:
+# marker line FIRST, before any actual restore work, specifically so the
+# GUI can clean up partial files if the operation is stopped mid-way.
+# =============================================================================
+
+function Invoke-LatestRestore {
+    param(
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [Parameter(Mandatory)][scriptblock]$LogAction
+    )
+
+    $cfg = Import-BackupConfig -ScriptRoot $ScriptRoot
+
+    if (-not (Test-ResticAvailable)) {
+        & $LogAction "ERROR: the backup tool isn't installed. Please call for help."
+        return $null
+    }
+
+    if (-not (Test-AnyRepoExists -ScriptRoot $ScriptRoot)) {
+        & $LogAction "ERROR: no backups exist yet — nothing to restore."
+        return $null
+    }
+
+    $RestoreTarget = Join-Path ([Environment]::GetFolderPath("Desktop")) "Restored-Backup-$(Get-Date -Format 'yyyy-MM-dd_HHmm')"
+    & $LogAction "RESTORE_TARGET:$RestoreTarget"
+    & $LogAction "Restoring your most recent backup..."
+
+    $internalRoot = ConvertTo-ResticInternalPath $cfg.SourcePath
+    $restoreArgs = @("restore", "latest:$internalRoot", "--tag", "docs-daily", "--target", $RestoreTarget, "--json")
+
+    $sawAnyProblem = $false
+    $benignOnly = $true
+
+    & restic @restoreArgs 2>&1 | ForEach-Object {
+        $line = [string]$_
+        $obj = $null
+        try { $obj = $line | ConvertFrom-Json -ErrorAction Stop } catch { $obj = $null }
+
+        if ($obj -and $obj.message_type -eq "status") {
+            & $LogAction "PROGRESS:$([math]::Round($obj.percent_done * 100))"
+        } elseif ($obj -and $obj.message_type -eq "summary") {
+            $restoredGB = [math]::Round($obj.bytes_restored / 1GB, 3)
+            & $LogAction "Restored $($obj.files_restored) file(s) — $restoredGB GiB."
+        } elseif ($obj -and $obj.message_type -eq "error") {
+            $sawAnyProblem = $true
+            $msg = [string]$obj.error.message
+            # Known benign: Windows SeRestorePrivilege limitation setting a
+            # timestamp on the synthetic path-mirroring root — data is fine.
+            if ($msg -notmatch "failed to restore timestamp") { $benignOnly = $false }
+            & $LogAction "ERROR: $msg"
+        } elseif ($line) {
+            & $LogAction $line
+        }
+    }
+    $exitCode = $LASTEXITCODE
+
+    $success = $false
+    if ($exitCode -eq 0) {
+        $success = $true
+    } elseif ($sawAnyProblem -and $benignOnly) {
+        & $LogAction "(A harmless Windows permission quirk prevented updating one folder's timestamp — your files restored completely and correctly.)"
+        $success = $true
+    }
+
+    if ($success) {
+        & $LogAction "Done! Your files are here: $RestoreTarget"
+        return $RestoreTarget
+    } else {
+        & $LogAction "ERROR: something went wrong. Please call for help rather than trying more things."
+        return $null
+    }
+}
+
+# =============================================================================
+# SEARCH
+# =============================================================================
+
+function Search-BackupFiles {
+    param(
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [Parameter(Mandatory)][string]$Term,
+        [scriptblock]$LogAction = { param($line) }
+    )
+
+    $cfg = Import-BackupConfig -ScriptRoot $ScriptRoot
+    $Tag = "docs-daily"
+    $pattern = "*$Term*"
+
+    $repos = @(@{ Label = "Local"; Path = $cfg.LocalRepoPath; PasswordFile = $cfg.PasswordFile })
+    $extPath = Get-ExternalDrivePath -Label $cfg.ExternalDriveLabel -Subpath $cfg.ExternalRepoSubpath
+    if ($extPath) {
+        $repos += @{ Label = "External"; Path = $extPath; PasswordFile = $cfg.PasswordFile }
+    }
+
+    $anyRepoExists = $false
+    $allResults = @()
+
+    foreach ($repo in $repos) {
+        & $LogAction "Checking $($repo.Label) repo..."
+        & restic -r $repo.Path --password-file $repo.PasswordFile snapshots --json 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            & $LogAction "$($repo.Label) repo not found, skipping."
+            continue
+        }
+        $anyRepoExists = $true
+
+        & $LogAction "Searching $($repo.Label) for '$Term'..."
+        $json = & restic -r $repo.Path --password-file $repo.PasswordFile find --ignore-case --json $pattern 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $json) {
+            & $LogAction "No matches in $($repo.Label)."
+            continue
+        }
+        $groups = $json | ConvertFrom-Json
+        if (-not $groups) {
+            & $LogAction "No matches in $($repo.Label)."
+            continue
+        }
+
+        $snapJson = & restic -r $repo.Path --password-file $repo.PasswordFile snapshots --tag $Tag --json 2>$null
+        $dates = @{}
+        if ($LASTEXITCODE -eq 0 -and $snapJson) {
+            foreach ($s in ($snapJson | ConvertFrom-Json)) {
+                $dates[$s.id] = ([datetime]$s.time).ToString("yyyy-MM-dd HH:mm")
+            }
+        }
+
+        $repoMatchCount = 0
+        foreach ($group in $groups) {
+            $snapDate = if ($dates.ContainsKey($group.snapshot)) { $dates[$group.snapshot] } else { "unknown date" }
+            foreach ($m in $group.matches) {
+                if ($m.type -eq "file") {
+                    $repoMatchCount++
+                    $allResults += [PSCustomObject]@{
+                        "Backup Date" = $snapDate
+                        "Location"    = $repo.Label
+                        "File"        = Split-Path $m.path -Leaf
+                        "Folder"      = Split-Path $m.path -Parent
+                        "Size (KB)"   = [math]::Round($m.size / 1KB, 1)
+                        FullPath      = $m.path
+                        SnapshotId    = $group.snapshot
+                        RepoPath      = $repo.Path
+                        RepoPassword  = $repo.PasswordFile
+                    }
+                }
+            }
+        }
+        & $LogAction "Found $repoMatchCount match(es) in $($repo.Label)."
+    }
+
+    if (-not $anyRepoExists) { return $null }
+    return $allResults
+}
+
+function Invoke-FileRestore {
+    param(
+        [Parameter(Mandatory)]$Selected,
+        [Parameter(Mandatory)][scriptblock]$LogAction
+    )
+
+    $RestoreDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "Restored-File-$(Get-Date -Format 'yyyy-MM-dd_HHmm')"
+    New-Item -ItemType Directory -Force -Path $RestoreDir | Out-Null
+    $RestoreFile = Join-Path $RestoreDir $Selected.File
+
+    & $LogAction "Restoring '$($Selected.File)' from $($Selected.'Backup Date') ($($Selected.Location))..."
+
+    $stderrFile = [System.IO.Path]::GetTempFileName()
+    & restic -r $Selected.RepoPath --password-file $Selected.RepoPassword dump $Selected.SnapshotId $Selected.FullPath > $RestoreFile 2>$stderrFile
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0) {
+        Get-Content $stderrFile -ErrorAction SilentlyContinue | ForEach-Object { & $LogAction $_ }
+    }
+    Remove-Item $stderrFile -ErrorAction SilentlyContinue
+
+    if ($exitCode -eq 0 -and (Test-Path $RestoreFile) -and (Get-Item $RestoreFile).Length -gt 0) {
+        & $LogAction "Done! Your file is here: $RestoreFile"
+        return $RestoreDir
+    } else {
+        & $LogAction "ERROR: something went wrong restoring that file. Please call for help."
+        Remove-Item $RestoreFile -ErrorAction SilentlyContinue
+        return $null
+    }
+}
+
+Export-ModuleMember -Function *

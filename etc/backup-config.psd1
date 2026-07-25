@@ -1,19 +1,19 @@
 @{
-    # EDIT THIS before first run — replace with dad's actual Windows username
-    SourcePath          = 'C:\Users\REPLACE_ME\Documents\2026'
+    # Leave blank to default to <Documents>\2026 for whoever's Windows
+    # account actually runs this — no username to know or hardcode.
+    # Set a real path here only if you want something different.
+    SourcePath          = ''
 
     LocalRepoPath       = 'C:\Backup\repo-local'
-    PasswordFile        = 'C:\Backup\etc\restic-repo.key'
 
-    # Dad labels the external drive itself once (right-click drive in
-    # Explorer > Rename) — the script finds it by label, not drive letter,
-    # since drive letters aren't guaranteed stable across reconnects.
+    # Leave blank to default to etc\restic-repo.key next to this config
+    # (relative to wherever this project lives — also no username needed).
+    PasswordFile        = ''
+
     ExternalDriveLabel  = 'ExternalDisk'
     ExternalRepoSubpath = 'ResticRepo'
 
     KeepDaily           = 10
     KeepWeekly          = 4
     KeepMonthly         = 6
-
-    LogRetentionDays    = 120
 }

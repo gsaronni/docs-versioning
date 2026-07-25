@@ -2,6 +2,36 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.0-beta 2026-07-26
+
+First complete, end-to-end working version — CLI and GUI both fully functional and tested. Still "beta" because: `SourcePath` isn't pointed at dad's real Documents\2026 yet, the external-drive test setup deliberately uses two folders on the same physical disk (not real redundancy), and none of this has been deployed to dad's actual machine yet.
+
+### Added
+- Full WinForms GUI (`backup-helper-launcher.ps1`): Back Up Now / Restore Latest Backup / Find an Old File / Stop, all sharing logic with the CLI scripts via `lib/backup-common.psm1`.
+- Real progress bars for Backup and Restore, parsed from restic's own `--json` `percent_done` stream — not simulated. Find gets an honest indeterminate marquee bar instead of a fake percentage, since `restic find` doesn't stream progress the way `backup`/`restore` do.
+- Search now logs real checkpoints (`Checking Local repo...`, `Searching External for 'x'...`, `Found N match(es)`) instead of running silently.
+- Multi-file select-and-restore via `Out-GridView -OutputMode Multiple`, in both CLI and GUI.
+- Stop button: cooperative stop via `[powershell].Stop()`; automatically cleans up partial restore files rather than leaving them on the Desktop.
+- Disk-space check before a full restore (`restic stats --mode restore-size` vs. free space, 10% safety margin) — warns and aborts if there isn't enough room.
+- `-Test` switch across every script + `BACKUP_HELPER_TEST_MODE` env var: a separate `backup-config.test.psd1` for local dev, completely isolated from the real `backup-config.psd1`. GUI title bar shows "TEST MODE" when active.
+- `create-shortcut.ps1`: generates a real desktop `.lnk`, hidden console (`pwsh -WindowStyle Hidden`), configurable icon.
+- `setup-scheduled-task.ps1`: idempotent Task Scheduler registration under a custom "Personal Backups" folder — `AtLogOn` + `Daily` (6pm) with `StartWhenAvailable` to catch missed runs; `-Test`/`-Remove` switches; drift-detection via a signature stored in the task's own Description field.
+
+### Fixed
+- Restore paths no longer mirror the full absolute source chain (`C:\Users\...`) — full restore is rooted at the actual backed-up folder via restic's `snapshot:subfolder` syntax; single-file restore uses `restic dump` for a flat, simple result.
+- The Windows `SeRestorePrivilege` timestamp warning (benign, data always intact) is no longer misreported as a failed restore.
+- `restic copy`/`init`'s deprecated `--repo2` flag replaced with the current `--from-repo`/`--from-password-file` scheme (deprecated since restic 0.14) — was also masking a real bug: the "already backed up today" shortcut path was skipping external-repo initialization entirely.
+- `$PSNativeCommandUseErrorActionPreference` (a PowerShell 7.3+ behavior, on by default in 7.4+) was converting restic's routine nonzero exit codes into GUI-crashing PowerShell errors — disabled explicitly.
+- The actual GUI crash cause: `Application.DoEvents()` inside a click handler was processing other button clicks **reentrantly**, nesting one PowerShell scriptblock's execution inside another's — something PowerShell's error-handling internals aren't built to expect when scriptblocks run as raw WinForms delegates. Replaced with a single top-level `Timer` and `$script:`-scope state; no `DoEvents()` anywhere anymore.
+- `restic` exit code `3` (some source files unreadable, backup otherwise fine) is now handled as a warning, not a hard failure.
+- Config no longer needs a hardcoded username anywhere: `SourcePath` defaults to `<Documents>\2026` for whoever's account is running it; `PasswordFile` defaults to a path relative to the script's own location.
+
+### Known gaps / next steps
+- Not yet deployed to dad's real machine — `SourcePath` still points at test data (BG3 savegames).
+- External-drive redundancy still untested against a genuinely separate physical disk.
+- No cleanup yet for old `Restored-Backup-*`/`Restored-File-*` folders accumulating on the Desktop over time.
+- Real-world duration for the first full external sync over USB 2.0 is unknown — `setup-scheduled-task.ps1`'s 6-hour execution limit is a placeholder pending real data.
+
 ## [0.1.0-alpha] - 2026-07-25
 
 ### Status
