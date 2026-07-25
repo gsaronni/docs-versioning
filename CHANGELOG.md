@@ -2,57 +2,68 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.1-beta 2026-07-26
+
+### Added
+- Update button in the GUI (`Invoke-DocsUpdate` in `lib/backup-common.psm1`), sharing the same background-runspace/progress-bar/Stop machinery as Backup/Restore/Find. Checks reachability to zblade's Gitea over Netbird first (clear message if unreachable, no silent hang), then forces the local repo to match `origin/main` (`fetch` + `reset --hard` + `clean -fd`), deliberate one-way sync, not a merge: whoever clicks Update gets exactly what's pushed, no local-drift handling needed since this repo has exactly one committer.
+- Shortcut regeneration on update, but only if the desktop `.lnk` is actually missing not run unconditionally, since the shortcut's target/icon don't change on their own between pulls.
+- Scheduled task re-registration folded into the same flow, calls the existing idempotent `setup-scheduled-task.ps1`, respecting `-Test` via `BACKUP_HELPER_TEST_MODE` so a test-mode Update never touches the real "Daily Backup" task.
+
+### Known gaps / next steps
+- Update itself isn't yet on a schedule, currently only runs when the button is clicked. A monthly (or longer) scheduled task calling `Invoke-DocsUpdate -Silent` would close the loop for a machine that might otherwise go a long time between manual "hey, click Update" nudges.
+- Still not deployed to dad's actual machine (unchanged from 1.0.0-beta).
+
 ## 1.0.0-beta 2026-07-26
 
-First complete, end-to-end working version — CLI and GUI both fully functional and tested. Still "beta" because: `SourcePath` isn't pointed at dad's real Documents\2026 yet, the external-drive test setup deliberately uses two folders on the same physical disk (not real redundancy), and none of this has been deployed to dad's actual machine yet.
+First complete, end-to-end working version, CLI and GUI both fully functional and tested. Still "beta" because: `SourcePath` isn't pointed at dad's real Documents\2026 yet, the external-drive test setup deliberately uses two folders on the same physical disk (not real redundancy), and none of this has been deployed to dad's actual machine yet.
 
 ### Added
 - Full WinForms GUI (`backup-helper-launcher.ps1`): Back Up Now / Restore Latest Backup / Find an Old File / Stop, all sharing logic with the CLI scripts via `lib/backup-common.psm1`.
-- Real progress bars for Backup and Restore, parsed from restic's own `--json` `percent_done` stream — not simulated. Find gets an honest indeterminate marquee bar instead of a fake percentage, since `restic find` doesn't stream progress the way `backup`/`restore` do.
+- Real progress bars for Backup and Restore, parsed from restic's own `--json` `percent_done` stream, not simulated. Find gets an honest indeterminate marquee bar instead of a fake percentage, since `restic find` doesn't stream progress the way `backup`/`restore` do.
 - Search now logs real checkpoints (`Checking Local repo...`, `Searching External for 'x'...`, `Found N match(es)`) instead of running silently.
 - Multi-file select-and-restore via `Out-GridView -OutputMode Multiple`, in both CLI and GUI.
 - Stop button: cooperative stop via `[powershell].Stop()`; automatically cleans up partial restore files rather than leaving them on the Desktop.
-- Disk-space check before a full restore (`restic stats --mode restore-size` vs. free space, 10% safety margin) — warns and aborts if there isn't enough room.
+- Disk-space check before a full restore (`restic stats --mode restore-size` vs. free space, 10% safety margin), warns and aborts if there isn't enough room.
 - `-Test` switch across every script + `BACKUP_HELPER_TEST_MODE` env var: a separate `backup-config.test.psd1` for local dev, completely isolated from the real `backup-config.psd1`. GUI title bar shows "TEST MODE" when active.
 - `create-shortcut.ps1`: generates a real desktop `.lnk`, hidden console (`pwsh -WindowStyle Hidden`), configurable icon.
-- `setup-scheduled-task.ps1`: idempotent Task Scheduler registration under a custom "Personal Backups" folder — `AtLogOn` + `Daily` (6pm) with `StartWhenAvailable` to catch missed runs; `-Test`/`-Remove` switches; drift-detection via a signature stored in the task's own Description field.
+- `setup-scheduled-task.ps1`: idempotent Task Scheduler registration under a custom "Personal Backups" folder, `AtLogOn` + `Daily` (6pm) with `StartWhenAvailable` to catch missed runs; `-Test`/`-Remove` switches; drift-detection via a signature stored in the task's own Description field.
 
 ### Fixed
-- Restore paths no longer mirror the full absolute source chain (`C:\Users\...`) — full restore is rooted at the actual backed-up folder via restic's `snapshot:subfolder` syntax; single-file restore uses `restic dump` for a flat, simple result.
+- Restore paths no longer mirror the full absolute source chain (`C:\Users\...`), full restore is rooted at the actual backed-up folder via restic's `snapshot:subfolder` syntax; single-file restore uses `restic dump` for a flat, simple result.
 - The Windows `SeRestorePrivilege` timestamp warning (benign, data always intact) is no longer misreported as a failed restore.
-- `restic copy`/`init`'s deprecated `--repo2` flag replaced with the current `--from-repo`/`--from-password-file` scheme (deprecated since restic 0.14) — was also masking a real bug: the "already backed up today" shortcut path was skipping external-repo initialization entirely.
-- `$PSNativeCommandUseErrorActionPreference` (a PowerShell 7.3+ behavior, on by default in 7.4+) was converting restic's routine nonzero exit codes into GUI-crashing PowerShell errors — disabled explicitly.
-- The actual GUI crash cause: `Application.DoEvents()` inside a click handler was processing other button clicks **reentrantly**, nesting one PowerShell scriptblock's execution inside another's — something PowerShell's error-handling internals aren't built to expect when scriptblocks run as raw WinForms delegates. Replaced with a single top-level `Timer` and `$script:`-scope state; no `DoEvents()` anywhere anymore.
+- `restic copy`/`init`'s deprecated `--repo2` flag replaced with the current `--from-repo`/`--from-password-file` scheme (deprecated since restic 0.14), was also masking a real bug: the "already backed up today" shortcut path was skipping external-repo initialization entirely.
+- `$PSNativeCommandUseErrorActionPreference` (a PowerShell 7.3+ behavior, on by default in 7.4+) was converting restic's routine nonzero exit codes into GUI-crashing PowerShell errors, disabled explicitly.
+- The actual GUI crash cause: `Application.DoEvents()` inside a click handler was processing other button clicks **reentrantly**, nesting one PowerShell scriptblock's execution inside another's, something PowerShell's error-handling internals aren't built to expect when scriptblocks run as raw WinForms delegates. Replaced with a single top-level `Timer` and `$script:`-scope state; no `DoEvents()` anywhere anymore.
 - `restic` exit code `3` (some source files unreadable, backup otherwise fine) is now handled as a warning, not a hard failure.
 - Config no longer needs a hardcoded username anywhere: `SourcePath` defaults to `<Documents>\2026` for whoever's account is running it; `PasswordFile` defaults to a path relative to the script's own location.
 
 ### Known gaps / next steps
-- Not yet deployed to dad's real machine — `SourcePath` still points at test data (BG3 savegames).
+- Not yet deployed to dad's real machine, `SourcePath` still points at test data (BG3 savegames).
 - External-drive redundancy still untested against a genuinely separate physical disk.
 - No cleanup yet for old `Restored-Backup-*`/`Restored-File-*` folders accumulating on the Desktop over time.
-- Real-world duration for the first full external sync over USB 2.0 is unknown — `setup-scheduled-task.ps1`'s 6-hour execution limit is a placeholder pending real data.
+- Real-world duration for the first full external sync over USB 2.0 is unknown, `setup-scheduled-task.ps1`'s 6-hour execution limit is a placeholder pending real data.
 
 ## [0.1.0-alpha] - 2026-07-25
 
 ### Status
 
-First working draft. Everything below tested on dev-machine as a standalone testbed — SourcePath in backup-config.psd1 still points at a placeholder, so nothing has run against a real target yet. Not deployed to production (dad's machine). Direct spinoff of Checkpoint's BG3/restic migration — same restic patterns, no bash/WSL dependency at all this time.
+First working draft. Everything below tested on dev-machine as a standalone testbed, SourcePath in backup-config.psd1 still points at a placeholder, so nothing has run against a real target yet. Not deployed to production (dad's machine). Direct spinoff of Checkpoint's BG3/restic migration, same restic patterns, no bash/WSL dependency at all this time.
 
 ### Added
 
-- backup-documents.ps1 — local repo (frequent) + external drive repo (replicated via `restic copy` whenever a drive labeled ExternalDisk is connected, detected by volume label rather than drive letter). Day-gate via direct query against the repo's own snapshot history (no marker file — same design proven on Checkpoint's BG3 migration). Retention: keep-daily 10, keep-weekly 4, keep-monthly 6 — monthly added here specifically because real documents warrant longer recall than game saves. Self-generating timestamped logs with rotation, no -LogFile parameter needed since there's nothing else to unify with here.
-- restore-latest.ps1 — zero-argument recovery. Restores the latest backup to a new timestamped Desktop folder. Never touches existing files.
-- fetch-file.ps1 — interactive search across all snapshots via `restic find --ignore-case --json`, confirmed recursive and case-insensitive (verified empirically against a real test repo, not assumed). Results shown in Out-GridView (built into PowerShell 7 on Windows Desktop, no extra module) for actual clickable selection, extracting just the one chosen file to a fresh Desktop folder.
-- lib/BackupCommon.psm1 — shared config-loading + restic-availability check, factored out once duplicated identically across all three scripts. Deliberately minimal: logging, day-gating, and external-drive detection stay local to backup-documents.ps1 since only it needs them. Not yet wired into the three scripts — sitting ready for the next pass.
-- bin/BackupHelper-Launcher.ps1 — WinForms front door (3 buttons: Back Up Now / Restore Latest / Find an Old File) over the same three scripts. Deliberately a thin launcher, not a rewrite — CLI usage of the underlying scripts is fully unaffected, and Task Scheduler will call backup-documents.ps1 directly, bypassing this entirely.
+- backup-documents.ps1, local repo (frequent) + external drive repo (replicated via `restic copy` whenever a drive labeled ExternalDisk is connected, detected by volume label rather than drive letter). Day-gate via direct query against the repo's own snapshot history (no marker file, same design proven on Checkpoint's BG3 migration). Retention: keep-daily 10, keep-weekly 4, keep-monthly 6, monthly added here specifically because real documents warrant longer recall than game saves. Self-generating timestamped logs with rotation, no -LogFile parameter needed since there's nothing else to unify with here.
+- restore-latest.ps1, zero-argument recovery. Restores the latest backup to a new timestamped Desktop folder. Never touches existing files.
+- fetch-file.ps1, interactive search across all snapshots via `restic find --ignore-case --json`, confirmed recursive and case-insensitive (verified empirically against a real test repo, not assumed). Results shown in Out-GridView (built into PowerShell 7 on Windows Desktop, no extra module) for actual clickable selection, extracting just the one chosen file to a fresh Desktop folder.
+- lib/BackupCommon.psm1, shared config-loading + restic-availability check, factored out once duplicated identically across all three scripts. Deliberately minimal: logging, day-gating, and external-drive detection stay local to backup-documents.ps1 since only it needs them. Not yet wired into the three scripts, sitting ready for the next pass.
+- bin/BackupHelper-Launcher.ps1, WinForms front door (3 buttons: Back Up Now / Restore Latest / Find an Old File) over the same three scripts. Deliberately a thin launcher, not a rewrite, CLI usage of the underlying scripts is fully unaffected, and Task Scheduler will call backup-documents.ps1 directly, bypassing this entirely.
 
 ### Considered and rejected
 
-- ps2exe compilation of the launcher into a standalone .exe. Built, hit a real bug ($PSScriptRoot is empty inside ps2exe-compiled executables — documented upstream limitation, confirmed via multiple independent sources), fixed it correctly using ps2exe's own documented workaround — then dropped the whole approach anyway. Reasoning: compiling a PowerShell script into a raw .exe is exactly the pattern antivirus heuristics flag as suspicious (ps2exe's own README acknowledges this), which risks a scary, unexplainable Defender popup on dad's very first double-click with no one around to reassure him it's fine. A plain .lnk shortcut targeting `pwsh.exe -File launcher.ps1` gives the same double-clickable icon experience with zero compilation, zero extra tooling, and zero AV risk. Simpler wins.
+- ps2exe compilation of the launcher into a standalone .exe. Built, hit a real bug ($PSScriptRoot is empty inside ps2exe-compiled executables, documented upstream limitation, confirmed via multiple independent sources), fixed it correctly using ps2exe's own documented workaround, then dropped the whole approach anyway. Reasoning: compiling a PowerShell script into a raw .exe is exactly the pattern antivirus heuristics flag as suspicious (ps2exe's own README acknowledges this), which risks a scary, unexplainable Defender popup on dad's very first double-click with no one around to reassure him it's fine. A plain .lnk shortcut targeting `pwsh.exe -File launcher.ps1` gives the same double-clickable icon experience with zero compilation, zero extra tooling, and zero AV risk. Simpler wins.
 
 ### Notes
 
-- Password file and all scripts live under a dedicated root (originally planned as C:\Backup on the real deployment), deliberately outside Documents\2026 — that folder syncs to Nextcloud, so anything inside it risks being swept into that sync or, worse, into the backup's own source set.
+- Password file and all scripts live under a dedicated root (originally planned as C:\Backup on the real deployment), deliberately outside Documents\2026, that folder syncs to Nextcloud, so anything inside it risks being swept into that sync or, worse, into the backup's own source set.
 - `restic copy` has no --dry-run flag (confirmed: open, unresolved upstream feature request, not something either of us is missing). backup-documents.ps1 handles this by logging the command it would run during -DryRun without executing it, rather than passing a flag that doesn't exist.
 
 ### TODO
@@ -60,6 +71,6 @@ First working draft. Everything below tested on dev-machine as a standalone test
 - Edit backup-config.psd1's SourcePath to a real path before any meaningful test run
 - Wire BackupCommon.psm1 into all three scripts (currently built, unused)
 - Decide on and build the .lnk shortcut for dad's actual desktop
-- Test the full external-drive replication path end to end (drive labeling, first-time external repo init, restic copy) — not yet exercised at all, only designed
-- Eventually: deeper GUI integration (logic moved into BackupCommon.psm1 as real functions, GUI calls them directly on a background thread instead of spawning separate console windows) — explicitly deferred, real scope, not a quick patch
+- Test the full external-drive replication path end to end (drive labeling, first-time external repo init, restic copy), not yet exercised at all, only designed
+- Eventually: deeper GUI integration (logic moved into BackupCommon.psm1 as real functions, GUI calls them directly on a background thread instead of spawning separate console windows), explicitly deferred, real scope, not a quick patch
 - Deploy to dad's actual machine once the above is solid
