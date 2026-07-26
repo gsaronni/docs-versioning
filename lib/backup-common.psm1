@@ -403,8 +403,10 @@ function Search-BackupFiles {
         & $LogAction (Get-Str 'FoundInRepo' -FormatArgs @($repoMatchCount, $repo.Label))
     }
 
-    if (-not $anyRepoExists) { return $null }
-    return $allResults
+    if (-not $anyRepoExists) {
+        return [PSCustomObject]@{ RepoFound = $false; Matches = @() }
+    }
+    return [PSCustomObject]@{ RepoFound = $true; Matches = $allResults }
 }
 
 function Invoke-FileRestore {

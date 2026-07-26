@@ -2,6 +2,15 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.4-beta 2026-07-26 (hotfix — found during deployment testing)
+
+### Fixed
+- Clicking "Find an Old File" / "Cerca Documento Perduto" with no repo at all silently did nothing — no dialog, no message, just a completed search that led nowhere. Root cause: `Search-BackupFiles` returned a bare `$null` to signal "no repo exists," but a plain `$null` doesn't reliably survive the trip back across the background runspace boundary, so neither the null-check nor the empty-results-check in the GUI ever matched. Fixed by having the function return an explicit `[PSCustomObject]@{ RepoFound; Matches }` instead of relying on `$null` vs. empty-array ambiguity.
+- "Find an Old File" now checks `Test-AnyRepoExists` upfront, before prompting for a search term or spinning up a background search — matching the pattern `$btnRestore` already used. Previously it would ask for a term, run the whole search, and only discover there was nothing to search *after* all that work; now it stops immediately with the same "Nothing to Search" message, no wasted round-trip.
+
+### Verified
+- Both Italian and English "no matches for this term" and "no repo exists yet" dialogs confirmed correct — the no-matches path via a temporary `LocalRepoPath` swap to the existing test repo (reverted via `git checkout --`), and the no-repo-yet path via a throwaway empty `restic init` at the production path, deleted afterward — production `C:\Backup\repo-local` remains genuinely uninitialized ahead of real deployment.
+
 ## 1.0.3-beta 2026-07-26
 
 ### Added

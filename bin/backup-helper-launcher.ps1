@@ -162,12 +162,14 @@ function Show-InputDialog {
 }
 
 function Show-SearchResultsAndContinue {
-    param($Results)
+    param($SearchOutcome)
 
-    if ($null -eq $Results) {
+    if (-not $SearchOutcome.RepoFound) {
         [System.Windows.Forms.MessageBox]::Show((Get-Str 'NothingToSearch'), (Get-Str 'NothingToSearchTitle'), "OK", "Warning") | Out-Null
         return
     }
+
+    $Results = $SearchOutcome.Matches
     if ($Results.Count -eq 0) {
         $again = [System.Windows.Forms.MessageBox]::Show((Get-Str 'NoMatches'), (Get-Str 'NoMatchesTitle'), "YesNo", "Information")
         if ($again -eq [System.Windows.Forms.DialogResult]::Yes) {
@@ -331,7 +333,7 @@ $pollTimer.Add_Tick({
                 $progressBar.Value = 0
                 $percentLabel.Text = ""
                 Add-Output (Get-Str 'SearchCompleted') ([System.Drawing.Color]::White)
-                Show-SearchResultsAndContinue -Results $rawResults
+                Show-SearchResultsAndContinue -SearchOutcome $rawResults
                 return
             }
 
@@ -446,6 +448,10 @@ $btnFind.Add_Click({
     try {
         if (-not (Test-ResticAvailable)) {
             [System.Windows.Forms.MessageBox]::Show((Get-Str 'ResticMissingCall'), (Get-Str 'ErrorTitle'), "OK", "Error") | Out-Null
+            return
+        }
+        if (-not (Test-AnyRepoExists -ScriptRoot $ScriptRoot)) {
+            [System.Windows.Forms.MessageBox]::Show((Get-Str 'NothingToSearch'), (Get-Str 'NothingToSearchTitle'), "OK", "Warning") | Out-Null
             return
         }
         $term = Show-InputDialog -Prompt (Get-Str 'FindPrompt') -Title (Get-Str 'FindTitle')
