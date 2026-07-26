@@ -7,7 +7,11 @@
 
 param([switch]$Test)
 
-if ($Test) { $env:BACKUP_HELPER_TEST_MODE = "1" }
+if ($Test) {
+    $env:BACKUP_HELPER_TEST_MODE = "1"
+} else {
+    Remove-Item Env:\BACKUP_HELPER_TEST_MODE -ErrorAction SilentlyContinue
+}
 
 Import-Module (Join-Path $PSScriptRoot "..\lib\backup-common.psm1") -Force
 

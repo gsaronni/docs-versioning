@@ -2,6 +2,20 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.3-beta 2026-07-26
+
+### Added
+- Full Italian (Dantesco) localization of the GUI, driven by the existing `-Test` switch: standard mode now shows Italian, `-Test` mode stays English for dev/debugging. All button text, dialog prompts, status labels, and log-box narration route through a new `lib/strings.psm1` (`Get-Str 'Key' [-FormatArgs @(...)]`). Deliberately out of scope: raw `restic`/`git` output passed straight through, the `PROGRESS:`/`RESTORE_TARGET:`/`ERROR:` internal markers (translating those would silently break the progress bar and error-coloring logic), and Windows' own OS-locale `MessageBox` button captions.
+
+### Fixed
+- `backup-helper-launcher.ps1` never actually reset `$env:BACKUP_HELPER_TEST_MODE` when run without `-Test` — a prior `-Test` run in the same PowerShell session left the variable set, so the GUI kept rendering in English even on a "real" run. The other three CLI wrappers already handled this correctly; the launcher was the one file missed. Fixed with the same `if/else` + `Remove-Item Env:\...` pattern used elsewhere.
+
+### Considered and rejected
+- A `git status --porcelain` dirty-check before Update's `reset --hard`/`clean -fd`, meant to stop the button from discarding uncommitted work on a dev machine mid-edit (cost three real losses on dev-machine during this session). Rejected: it would have equally blocked the reset on dad's machine any time he deleted or altered a tracked file — exactly the "no matter what he does to it, Update fixes it" guarantee the feature exists for. Dad's machine is deliberately meant to have its state forced back to whatever's pushed, full stop, deletions and edits included. Resolution: be more careful testing Update on dev-machine instead of softening what it does on dad's install.
+
+### Known gaps / next steps
+- Still not deployed to dad's real machine (unchanged from prior versions).
+
 ## 1.0.2-beta 2026-07-26
 
 ### Fixed

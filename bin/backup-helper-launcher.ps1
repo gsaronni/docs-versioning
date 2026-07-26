@@ -9,51 +9,56 @@
 
 param([switch]$Test)
 
-if ($Test) { $env:BACKUP_HELPER_TEST_MODE = "1" }
+if ($Test) {
+    $env:BACKUP_HELPER_TEST_MODE = "1"
+} else {
+    Remove-Item Env:\BACKUP_HELPER_TEST_MODE -ErrorAction SilentlyContinue
+}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $ScriptRoot = $PSScriptRoot
 Import-Module (Join-Path $ScriptRoot "..\lib\backup-common.psm1") -Force
+Import-Module (Join-Path $ScriptRoot "..\lib\strings.psm1") -Force
 
 # =============================================================================
 # UI
 # =============================================================================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = if ($Test) { "Backup Helper — TEST MODE" } else { "Backup Helper" }
+$form.Text = Get-Str 'Title'
 $form.Size = New-Object System.Drawing.Size(560, 500)
 $form.StartPosition = "CenterScreen"
 $form.MinimumSize = $form.Size
 
 $btnBackup = New-Object System.Windows.Forms.Button
-$btnBackup.Text = "Back Up Now"
+$btnBackup.Text = Get-Str 'BtnBackup'
 $btnBackup.Size = New-Object System.Drawing.Size(160, 40)
 $btnBackup.Location = New-Object System.Drawing.Point(20, 20)
 $form.Controls.Add($btnBackup)
 
 $btnRestore = New-Object System.Windows.Forms.Button
-$btnRestore.Text = "Restore Latest Backup"
+$btnRestore.Text = Get-Str 'BtnRestore'
 $btnRestore.Size = New-Object System.Drawing.Size(160, 40)
 $btnRestore.Location = New-Object System.Drawing.Point(190, 20)
 $form.Controls.Add($btnRestore)
 
 $btnFind = New-Object System.Windows.Forms.Button
-$btnFind.Text = "Find an Old File"
+$btnFind.Text = Get-Str 'BtnFind'
 $btnFind.Size = New-Object System.Drawing.Size(160, 40)
 $btnFind.Location = New-Object System.Drawing.Point(360, 20)
 $form.Controls.Add($btnFind)
 
 $btnStop = New-Object System.Windows.Forms.Button
-$btnStop.Text = "Stop"
+$btnStop.Text = Get-Str 'BtnStop'
 $btnStop.Size = New-Object System.Drawing.Size(100, 30)
 $btnStop.Location = New-Object System.Drawing.Point(20, 65)
 $btnStop.Enabled = $false
 $form.Controls.Add($btnStop)
 
 $btnUpdate = New-Object System.Windows.Forms.Button
-$btnUpdate.Text = "Update"
+$btnUpdate.Text = Get-Str 'BtnUpdate'
 $btnUpdate.Size = New-Object System.Drawing.Size(100, 30)
 $btnUpdate.Location = New-Object System.Drawing.Point(360, 65)
 $form.Controls.Add($btnUpdate)
@@ -73,13 +78,13 @@ $btnUpdate.Add_Click({
     } catch {
         foreach ($b in $AllButtons) { $b.Enabled = $true }
         $btnStop.Enabled = $false
-        $statusLabel.Text = "Ready"
-        [System.Windows.Forms.MessageBox]::Show("Something went wrong:`r`n`r`n$($_.Exception.Message)", "Error", "OK", "Error") | Out-Null
+        $statusLabel.Text = Get-Str 'StatusReady'
+        [System.Windows.Forms.MessageBox]::Show((Get-Str 'SomethingWrong' -FormatArgs @($_.Exception.Message)), (Get-Str 'ErrorTitle'), "OK", "Error") | Out-Null
     }
 })
 
 $statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.Text = "Ready"
+$statusLabel.Text = Get-Str 'StatusReady'
 $statusLabel.AutoSize = $true
 $statusLabel.Location = New-Object System.Drawing.Point(135, 73)
 $form.Controls.Add($statusLabel)
@@ -160,20 +165,20 @@ function Show-SearchResultsAndContinue {
     param($Results)
 
     if ($null -eq $Results) {
-        [System.Windows.Forms.MessageBox]::Show("No backups are set up yet — nothing to search.", "Nothing to Search", "OK", "Warning") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show((Get-Str 'NothingToSearch'), (Get-Str 'NothingToSearchTitle'), "OK", "Warning") | Out-Null
         return
     }
     if ($Results.Count -eq 0) {
-        $again = [System.Windows.Forms.MessageBox]::Show("No files found. Search again?", "No Matches", "YesNo", "Information")
+        $again = [System.Windows.Forms.MessageBox]::Show((Get-Str 'NoMatches'), (Get-Str 'NoMatchesTitle'), "YesNo", "Information")
         if ($again -eq [System.Windows.Forms.DialogResult]::Yes) {
-            $term = Show-InputDialog -Prompt "Type part of a file name (e.g. 'invoice' or 'march'):" -Title "Find an Old File"
+            $term = Show-InputDialog -Prompt (Get-Str 'FindPrompt') -Title (Get-Str 'FindTitle')
             if (-not [string]::IsNullOrWhiteSpace($term)) { Start-SearchOperation -Term $term }
         }
         return
     }
 
     $selected = $Results | Sort-Object "Backup Date" -Descending |
-        Out-GridView -Title "Found $($Results.Count) match(es) — select one or more (Ctrl/Shift-click) to restore" -OutputMode Multiple
+        Out-GridView -Title (Get-Str 'GridTitle' -FormatArgs @($Results.Count)) -OutputMode Multiple
 
     if ($selected) {
         foreach ($item in $selected) {
@@ -222,12 +227,23 @@ function Receive-LogLine {
     Add-Output $Line $color
 }
 
+function Get-OpLabel {
+    param([string]$OperationName)
+    switch ($OperationName) {
+        'Backup'  { return Get-Str 'OpBackup' }
+        'Restore' { return Get-Str 'OpRestore' }
+        'Search'  { return Get-Str 'OpSearch' }
+        'Update'  { return Get-Str 'OpUpdate' }
+        default   { return $OperationName }
+    }
+}
+
 function Start-BackgroundOperation {
     param([string]$OperationName, [scriptblock]$Operation, [string]$ExtraArg)
 
     foreach ($b in $AllButtons) { $b.Enabled = $false }
     if ($OperationName -ne "Search") { $btnStop.Enabled = $true }
-    $script:ActiveBaseStatus = if ($OperationName -eq "Search") { "Searching" } else { "Working" }
+    $script:ActiveBaseStatus = if ($OperationName -eq "Search") { Get-Str 'BaseSearching' } else { Get-Str 'BaseWorking' }
     $statusLabel.Text = "$($script:ActiveBaseStatus)... $($script:SpinnerChars[0])"
     $script:ActiveRestoreTarget = $null
 
@@ -244,7 +260,7 @@ function Start-BackgroundOperation {
         $percentLabel.Text = "0%"
     }
 
-    Add-Output "--- $OperationName started ---" ([System.Drawing.Color]::White)
+    Add-Output (Get-Str 'OpStarted' -FormatArgs @((Get-OpLabel $OperationName))) ([System.Drawing.Color]::White)
 
     $script:ActiveLogQueue = [System.Collections.Queue]::Synchronized((New-Object System.Collections.Queue))
     $script:ActiveOperationName = $OperationName
@@ -310,26 +326,26 @@ $pollTimer.Add_Tick({
             foreach ($b in $AllButtons) { $b.Enabled = $true }
 
             if ($opName -eq "Search") {
-                $statusLabel.Text = "Ready"
+                $statusLabel.Text = Get-Str 'StatusReady'
                 $progressBar.Style = "Blocks"
                 $progressBar.Value = 0
                 $percentLabel.Text = ""
-                Add-Output "--- Search completed ---" ([System.Drawing.Color]::White)
+                Add-Output (Get-Str 'SearchCompleted') ([System.Drawing.Color]::White)
                 Show-SearchResultsAndContinue -Results $rawResults
                 return
             }
 
             if ($wasStopped) {
-                $statusLabel.Text = "Stopped"
+                $statusLabel.Text = Get-Str 'StatusStopped'
                 $progressBar.Value = 0
                 $percentLabel.Text = ""
-                Add-Output "--- $opName stopped by user ---" ([System.Drawing.Color]::Yellow)
+                Add-Output (Get-Str 'OpStoppedByUser' -FormatArgs @((Get-OpLabel $opName))) ([System.Drawing.Color]::Yellow)
 
                 # Clean up whatever a stopped restore had partially written —
                 # never leave dirty/incomplete files sitting on the Desktop.
                 if ($opName -eq "Restore" -and $restoreTarget -and (Test-Path $restoreTarget)) {
                     Remove-Item -Path $restoreTarget -Recurse -Force -ErrorAction SilentlyContinue
-                    Add-Output "Cleaned up partial restore files." ([System.Drawing.Color]::Yellow)
+                    Add-Output (Get-Str 'Cleaned') ([System.Drawing.Color]::Yellow)
                 }
                 return
             }
@@ -338,14 +354,14 @@ $pollTimer.Add_Tick({
             $success = [bool]$lastResult
 
             if ($success) {
-                $statusLabel.Text = "Ready"
+                $statusLabel.Text = Get-Str 'StatusReady'
                 $progressBar.Value = 100
                 $percentLabel.Text = "100%"
-                Add-Output "--- $opName completed ---" ([System.Drawing.Color]::White)
+                Add-Output (Get-Str 'OpCompleted' -FormatArgs @((Get-OpLabel $opName))) ([System.Drawing.Color]::White)
                 if ($opName -eq "Restore" -and ($lastResult -is [string])) { Invoke-Item $lastResult }
             } else {
-                $statusLabel.Text = "Failed — see messages above"
-                Add-Output "--- $opName FAILED — see errors above ---" ([System.Drawing.Color]::Red)
+                $statusLabel.Text = Get-Str 'StatusFailed'
+                Add-Output (Get-Str 'OpFailed' -FormatArgs @((Get-OpLabel $opName))) ([System.Drawing.Color]::Red)
             }
         }
     } catch {
@@ -357,8 +373,8 @@ $pollTimer.Add_Tick({
         $script:ActiveLogQueue = $null
         $btnStop.Enabled = $false
         foreach ($b in $AllButtons) { $b.Enabled = $true }
-        $statusLabel.Text = "Ready"
-        [System.Windows.Forms.MessageBox]::Show("Something went wrong:`r`n`r`n$($_.Exception.Message)", "Error", "OK", "Error") | Out-Null
+        $statusLabel.Text = Get-Str 'StatusReady'
+        [System.Windows.Forms.MessageBox]::Show((Get-Str 'SomethingWrong' -FormatArgs @($_.Exception.Message)), (Get-Str 'ErrorTitle'), "OK", "Error") | Out-Null
     }
 })
 
@@ -366,7 +382,7 @@ $btnBackup.Add_Click({
     try {
         $problem = Test-BackupConfigReady -ScriptRoot $ScriptRoot
         if ($problem) {
-            [System.Windows.Forms.MessageBox]::Show($problem, "Can't Back Up Yet", "OK", "Warning") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show($problem, (Get-Str 'CantBackupTitle'), "OK", "Warning") | Out-Null
             return
         }
         Start-BackgroundOperation -OperationName "Backup" -Operation {
@@ -378,19 +394,19 @@ $btnBackup.Add_Click({
     } catch {
         foreach ($b in $AllButtons) { $b.Enabled = $true }
         $btnStop.Enabled = $false
-        $statusLabel.Text = "Ready"
-        [System.Windows.Forms.MessageBox]::Show("Something went wrong:`r`n`r`n$($_.Exception.Message)", "Error", "OK", "Error") | Out-Null
+        $statusLabel.Text = Get-Str 'StatusReady'
+        [System.Windows.Forms.MessageBox]::Show((Get-Str 'SomethingWrong' -FormatArgs @($_.Exception.Message)), (Get-Str 'ErrorTitle'), "OK", "Error") | Out-Null
     }
 })
 
 $btnRestore.Add_Click({
     try {
         if (-not (Test-ResticAvailable)) {
-            [System.Windows.Forms.MessageBox]::Show("The backup tool isn't installed. Please call for help.", "Can't Restore Yet", "OK", "Warning") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show((Get-Str 'ResticMissingCall'), (Get-Str 'CantRestoreTitle'), "OK", "Warning") | Out-Null
             return
         }
         if (-not (Test-AnyRepoExists -ScriptRoot $ScriptRoot)) {
-            [System.Windows.Forms.MessageBox]::Show("No backups exist yet — nothing to restore.", "Can't Restore Yet", "OK", "Warning") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show((Get-Str 'NoBackupsYet'), (Get-Str 'CantRestoreTitle'), "OK", "Warning") | Out-Null
             return
         }
 
@@ -399,8 +415,8 @@ $btnRestore.Add_Click({
             $neededGB = [math]::Round($spaceCheck.NeededBytes / 1GB, 1)
             $freeGB = [math]::Round($spaceCheck.FreeBytes / 1GB, 1)
             [System.Windows.Forms.MessageBox]::Show(
-                "Not enough disk space to restore.`r`n`r`nNeeded (approx): $neededGB GB`r`nAvailable: $freeGB GB`r`n`r`nFree up space and try again.",
-                "Not Enough Space", "OK", "Warning") | Out-Null
+                (Get-Str 'NotEnoughSpace' -FormatArgs @($neededGB, $freeGB)),
+                (Get-Str 'NotEnoughSpaceTitle'), "OK", "Warning") | Out-Null
             return
         }
 
@@ -413,15 +429,15 @@ $btnRestore.Add_Click({
     } catch {
         foreach ($b in $AllButtons) { $b.Enabled = $true }
         $btnStop.Enabled = $false
-        $statusLabel.Text = "Ready"
-        [System.Windows.Forms.MessageBox]::Show("Something went wrong:`r`n`r`n$($_.Exception.Message)", "Error", "OK", "Error") | Out-Null
+        $statusLabel.Text = Get-Str 'StatusReady'
+        [System.Windows.Forms.MessageBox]::Show((Get-Str 'SomethingWrong' -FormatArgs @($_.Exception.Message)), (Get-Str 'ErrorTitle'), "OK", "Error") | Out-Null
     }
 })
 
 $btnStop.Add_Click({
     if ($script:ActivePS) {
         try { $script:ActivePS.Stop() } catch {}
-        Add-Output "--- Stop requested — finishing current step... ---" ([System.Drawing.Color]::Yellow)
+        Add-Output (Get-Str 'StopRequested') ([System.Drawing.Color]::Yellow)
         $btnStop.Enabled = $false
     }
 })
@@ -429,15 +445,15 @@ $btnStop.Add_Click({
 $btnFind.Add_Click({
     try {
         if (-not (Test-ResticAvailable)) {
-            [System.Windows.Forms.MessageBox]::Show("The backup tool isn't installed. Please call for help.", "Error", "OK", "Error") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show((Get-Str 'ResticMissingCall'), (Get-Str 'ErrorTitle'), "OK", "Error") | Out-Null
             return
         }
-        $term = Show-InputDialog -Prompt "Type part of a file name (e.g. 'invoice' or 'march'):" -Title "Find an Old File"
+        $term = Show-InputDialog -Prompt (Get-Str 'FindPrompt') -Title (Get-Str 'FindTitle')
         if ([string]::IsNullOrWhiteSpace($term)) { return }
         Start-SearchOperation -Term $term
     } catch {
-        $statusLabel.Text = "Ready"
-        [System.Windows.Forms.MessageBox]::Show("Something went wrong:`r`n`r`n$($_.Exception.Message)", "Error", "OK", "Error") | Out-Null
+        $statusLabel.Text = Get-Str 'StatusReady'
+        [System.Windows.Forms.MessageBox]::Show((Get-Str 'SomethingWrong' -FormatArgs @($_.Exception.Message)), (Get-Str 'ErrorTitle'), "OK", "Error") | Out-Null
     }
 })
 

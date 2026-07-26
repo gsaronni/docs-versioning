@@ -12,12 +12,14 @@
 # GUI when triggered from inside a WinForms event-callback context.
 $global:PSNativeCommandUseErrorActionPreference = $false
 
+Import-Module (Join-Path $PSScriptRoot "strings.psm1") -Force
+
 function Import-BackupConfig {
     param([string]$ScriptRoot)
     $ConfigName = if ($env:BACKUP_HELPER_TEST_MODE -eq "1") { "backup-config.test.psd1" } else { "backup-config.psd1" }
     $ConfigPath = Join-Path $ScriptRoot "..\etc\$ConfigName"
     if (-not (Test-Path $ConfigPath)) {
-        throw "Config file not found: $ConfigPath (copy backup-config.template.psd1 to $ConfigName and edit the paths)"
+        throw (Get-Str 'ConfigNotFound' -FormatArgs @($ConfigPath, $ConfigName))
     }
     $cfg = Import-PowerShellDataFile $ConfigPath
 
@@ -59,16 +61,16 @@ function Sync-ExternalRepo {
 
     $extPath = Get-ExternalDrivePath -Label $cfg.ExternalDriveLabel -Subpath $cfg.ExternalRepoSubpath
     if (-not $extPath) {
-        & $LogAction "External drive ($($cfg.ExternalDriveLabel)) not connected — skipping, will retry next run"
+        & $LogAction (Get-Str 'ExtDriveSkip' -FormatArgs @($cfg.ExternalDriveLabel))
         return $true
     }
 
-    & $LogAction "External drive detected at $extPath"
+    & $LogAction (Get-Str 'ExtDriveFound' -FormatArgs @($extPath))
     & restic -r $extPath --password-file $cfg.PasswordFile snapshots --json 2>&1 | Out-Null
     $extRepoExists = $LASTEXITCODE -eq 0
 
     if (-not $extRepoExists) {
-        & $LogAction "External repo not found — initializing (matching chunker params to local repo)"
+        & $LogAction (Get-Str 'ExtRepoInit')
         if (-not $DryRun) {
             $initArgs = @(
                 "-r", $extPath, "--password-file", $cfg.PasswordFile, "init",
@@ -76,8 +78,8 @@ function Sync-ExternalRepo {
                 "--copy-chunker-params"
             )
             $initExit = Invoke-LoggedRestic -ResticArgs $initArgs -LogAction $LogAction
-            if ($initExit -ne 0) { & $LogAction "ERROR: external repo init failed (see restic output above)"; return $false }
-            & $LogAction "External repo initialized"
+            if ($initExit -ne 0) { & $LogAction (Get-Str 'ExtRepoInitFailed'); return $false }
+            & $LogAction (Get-Str 'ExtRepoInitOk')
         }
     }
 
@@ -95,11 +97,11 @@ function Sync-ExternalRepo {
 function Test-BackupConfigReady {
     param([string]$ScriptRoot)
     $cfg = Import-BackupConfig -ScriptRoot $ScriptRoot
-    if (-not (Test-ResticAvailable)) { return "The backup tool (restic) isn't installed." }
-    if (-not (Test-Path $cfg.SourcePath)) { return "Source folder doesn't exist: $($cfg.SourcePath)" }
+    if (-not (Test-ResticAvailable)) { return (Get-Str 'ResticMissing') }
+    if (-not (Test-Path $cfg.SourcePath)) { return (Get-Str 'SourceMissing' -FormatArgs @($cfg.SourcePath)) }
     $localDriveRoot = Split-Path -Qualifier $cfg.LocalRepoPath
-    if (-not (Test-Path $localDriveRoot)) { return "$localDriveRoot isn't accessible." }
-    if (-not (Test-Path $cfg.PasswordFile)) { return "Password file not found: $($cfg.PasswordFile)" }
+    if (-not (Test-Path $localDriveRoot)) { return (Get-Str 'DriveMissing' -FormatArgs @($localDriveRoot)) }
+    if (-not (Test-Path $cfg.PasswordFile)) { return (Get-Str 'PasswordMissing' -FormatArgs @($cfg.PasswordFile)) }
     return $null
 }
 
@@ -169,46 +171,46 @@ function Invoke-DocumentBackup {
     $Tag = "docs-daily"
 
     if (-not (Test-ResticAvailable)) {
-        & $LogAction "ERROR: restic not found in PATH."
+        & $LogAction (Get-Str 'ResticNotFound')
         return $false
     }
     if (-not (Test-Path $cfg.SourcePath)) {
-        & $LogAction "ERROR: Source path does not exist: $($cfg.SourcePath)"
+        & $LogAction (Get-Str 'SourceMissingErr' -FormatArgs @($cfg.SourcePath))
         return $false
     }
     $localDriveRoot = Split-Path -Qualifier $cfg.LocalRepoPath
     if (-not (Test-Path $localDriveRoot)) {
-        & $LogAction "ERROR: $localDriveRoot is not accessible."
+        & $LogAction (Get-Str 'DriveMissingErr' -FormatArgs @($localDriveRoot))
         return $false
     }
     if (-not (Test-Path $cfg.PasswordFile)) {
-        & $LogAction "ERROR: Password file not found: $($cfg.PasswordFile)"
+        & $LogAction (Get-Str 'PasswordMissingErr' -FormatArgs @($cfg.PasswordFile))
         return $false
     }
 
-    & $LogAction "Checking local repo at $($cfg.LocalRepoPath)"
+    & $LogAction (Get-Str 'CheckingLocalRepo' -FormatArgs @($cfg.LocalRepoPath))
     & restic snapshots --json 2>&1 | Out-Null
     $repoExists = $LASTEXITCODE -eq 0
 
     if (-not $repoExists) {
-        & $LogAction "Local repo not found — initializing"
+        & $LogAction (Get-Str 'LocalRepoNotFound')
         if (-not $DryRun) {
             & restic init
-            if ($LASTEXITCODE -ne 0) { & $LogAction "ERROR: restic init failed"; return $false }
-            & $LogAction "Local repo initialized"
+            if ($LASTEXITCODE -ne 0) { & $LogAction (Get-Str 'RepoInitFailed'); return $false }
+            & $LogAction (Get-Str 'LocalRepoInitOk')
         }
     } else {
-        & $LogAction "Local repo already exists"
+        & $LogAction (Get-Str 'LocalRepoExists')
     }
 
     $alreadyRanToday = Test-AlreadyRanToday -Tag $Tag
     if ($alreadyRanToday -and -not $DryRun) {
-        & $LogAction "Latest snapshot already dated today — nothing to back up. Checking external drive."
+        & $LogAction (Get-Str 'AlreadyRanToday')
         Sync-ExternalRepo -cfg $cfg -Tag $Tag -LogAction $LogAction -DryRun:$DryRun | Out-Null
         return $true
     }
 
-    & $LogAction "Starting backup of $($cfg.SourcePath)"
+    & $LogAction (Get-Str 'StartingBackup' -FormatArgs @($cfg.SourcePath))
     $backupArgs = @("backup", $cfg.SourcePath, "--tag", $Tag, "--skip-if-unchanged", "--json")
     if ($DryRun) { $backupArgs += "--dry-run" }
 
@@ -221,8 +223,8 @@ function Invoke-DocumentBackup {
             & $LogAction "PROGRESS:$([math]::Round($obj.percent_done * 100))"
         } elseif ($obj -and $obj.message_type -eq "summary") {
             $addedGB = [math]::Round($obj.data_added / 1GB, 3)
-            & $LogAction "Added $($obj.files_new) new, $($obj.files_changed) changed file(s) — $addedGB GiB added to the repository."
-            if ($obj.snapshot_id) { & $LogAction "Snapshot $($obj.snapshot_id) saved." }
+            & $LogAction (Get-Str 'FilesAdded' -FormatArgs @($obj.files_new, $obj.files_changed, $addedGB))
+            if ($obj.snapshot_id) { & $LogAction (Get-Str 'SnapshotSaved' -FormatArgs @($obj.snapshot_id)) }
         } elseif ($obj -and $obj.message_type -eq "error") {
             & $LogAction "ERROR: $($obj.error.message)"
         } elseif ($line) {
@@ -234,14 +236,14 @@ function Invoke-DocumentBackup {
     if ($backupExit -eq 3) {
         # Exit code 3 = some source files couldn't be read, but the backup
         # otherwise completed and a snapshot was created — not a real failure.
-        & $LogAction "WARNING: some source files could not be read, but the backup otherwise completed."
+        & $LogAction (Get-Str 'BackupPartialWarn')
     } elseif ($backupExit -ne 0) {
-        & $LogAction "ERROR: backup exited with code $backupExit"
+        & $LogAction (Get-Str 'BackupExitError' -FormatArgs @($backupExit))
         return $false
     }
-    & $LogAction "Backup completed successfully"
+    & $LogAction (Get-Str 'BackupOk')
 
-    & $LogAction "Applying retention (keep-daily=$($cfg.KeepDaily) keep-weekly=$($cfg.KeepWeekly) keep-monthly=$($cfg.KeepMonthly))"
+    & $LogAction (Get-Str 'ApplyingRetention' -FormatArgs @($cfg.KeepDaily, $cfg.KeepWeekly, $cfg.KeepMonthly))
     $forgetArgs = @("forget", "--tag", $Tag, "--keep-daily", $cfg.KeepDaily, "--keep-weekly", $cfg.KeepWeekly, "--keep-monthly", $cfg.KeepMonthly, "--prune")
     if ($DryRun) { $forgetArgs += "--dry-run" }
     Invoke-LoggedRestic -ResticArgs $forgetArgs -LogAction $LogAction | Out-Null
@@ -266,18 +268,18 @@ function Invoke-LatestRestore {
     $cfg = Import-BackupConfig -ScriptRoot $ScriptRoot
 
     if (-not (Test-ResticAvailable)) {
-        & $LogAction "ERROR: the backup tool isn't installed. Please call for help."
+        & $LogAction (Get-Str 'ResticMissingCall')
         return $null
     }
 
     if (-not (Test-AnyRepoExists -ScriptRoot $ScriptRoot)) {
-        & $LogAction "ERROR: no backups exist yet — nothing to restore."
+        & $LogAction (Get-Str 'NoReposYet')
         return $null
     }
 
     $RestoreTarget = Join-Path ([Environment]::GetFolderPath("Desktop")) "Restored-Backup-$(Get-Date -Format 'yyyy-MM-dd_HHmm')"
     & $LogAction "RESTORE_TARGET:$RestoreTarget"
-    & $LogAction "Restoring your most recent backup..."
+    & $LogAction (Get-Str 'RestoringLatest')
 
     $internalRoot = ConvertTo-ResticInternalPath $cfg.SourcePath
     $restoreArgs = @("restore", "latest:$internalRoot", "--tag", "docs-daily", "--target", $RestoreTarget, "--json")
@@ -294,7 +296,7 @@ function Invoke-LatestRestore {
             & $LogAction "PROGRESS:$([math]::Round($obj.percent_done * 100))"
         } elseif ($obj -and $obj.message_type -eq "summary") {
             $restoredGB = [math]::Round($obj.bytes_restored / 1GB, 3)
-            & $LogAction "Restored $($obj.files_restored) file(s) — $restoredGB GiB."
+            & $LogAction (Get-Str 'FilesRestored' -FormatArgs @($obj.files_restored, $restoredGB))
         } elseif ($obj -and $obj.message_type -eq "error") {
             $sawAnyProblem = $true
             $msg = [string]$obj.error.message
@@ -312,15 +314,15 @@ function Invoke-LatestRestore {
     if ($exitCode -eq 0) {
         $success = $true
     } elseif ($sawAnyProblem -and $benignOnly) {
-        & $LogAction "(A harmless Windows permission quirk prevented updating one folder's timestamp — your files restored completely and correctly.)"
+        & $LogAction (Get-Str 'TimestampQuirk')
         $success = $true
     }
 
     if ($success) {
-        & $LogAction "Done! Your files are here: $RestoreTarget"
+        & $LogAction (Get-Str 'RestoreDoneAt' -FormatArgs @($RestoreTarget))
         return $RestoreTarget
     } else {
-        & $LogAction "ERROR: something went wrong. Please call for help rather than trying more things."
+        & $LogAction (Get-Str 'CallForHelp')
         return $null
     }
 }
@@ -350,23 +352,23 @@ function Search-BackupFiles {
     $allResults = @()
 
     foreach ($repo in $repos) {
-        & $LogAction "Checking $($repo.Label) repo..."
+        & $LogAction (Get-Str 'CheckingRepo' -FormatArgs @($repo.Label))
         & restic -r $repo.Path --password-file $repo.PasswordFile snapshots --json 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            & $LogAction "$($repo.Label) repo not found, skipping."
+            & $LogAction (Get-Str 'RepoNotFoundSkip' -FormatArgs @($repo.Label))
             continue
         }
         $anyRepoExists = $true
 
-        & $LogAction "Searching $($repo.Label) for '$Term'..."
+        & $LogAction (Get-Str 'SearchingRepo' -FormatArgs @($repo.Label, $Term))
         $json = & restic -r $repo.Path --password-file $repo.PasswordFile find --ignore-case --json $pattern 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $json) {
-            & $LogAction "No matches in $($repo.Label)."
+            & $LogAction (Get-Str 'NoMatchesInRepo' -FormatArgs @($repo.Label))
             continue
         }
         $groups = $json | ConvertFrom-Json
         if (-not $groups) {
-            & $LogAction "No matches in $($repo.Label)."
+            & $LogAction (Get-Str 'NoMatchesInRepo' -FormatArgs @($repo.Label))
             continue
         }
 
@@ -398,7 +400,7 @@ function Search-BackupFiles {
                 }
             }
         }
-        & $LogAction "Found $repoMatchCount match(es) in $($repo.Label)."
+        & $LogAction (Get-Str 'FoundInRepo' -FormatArgs @($repoMatchCount, $repo.Label))
     }
 
     if (-not $anyRepoExists) { return $null }
@@ -415,7 +417,7 @@ function Invoke-FileRestore {
     New-Item -ItemType Directory -Force -Path $RestoreDir | Out-Null
     $RestoreFile = Join-Path $RestoreDir $Selected.File
 
-    & $LogAction "Restoring '$($Selected.File)' from $($Selected.'Backup Date') ($($Selected.Location))..."
+    & $LogAction (Get-Str 'RestoringFile' -FormatArgs @($Selected.File, $Selected.'Backup Date', $Selected.Location))
 
     $stderrFile = [System.IO.Path]::GetTempFileName()
     & restic -r $Selected.RepoPath --password-file $Selected.RepoPassword dump $Selected.SnapshotId $Selected.FullPath > $RestoreFile 2>$stderrFile
@@ -427,10 +429,10 @@ function Invoke-FileRestore {
     Remove-Item $stderrFile -ErrorAction SilentlyContinue
 
     if ($exitCode -eq 0 -and (Test-Path $RestoreFile) -and (Get-Item $RestoreFile).Length -gt 0) {
-        & $LogAction "Done! Your file is here: $RestoreFile"
+        & $LogAction (Get-Str 'FileDoneAt' -FormatArgs @($RestoreFile))
         return $RestoreDir
     } else {
-        & $LogAction "ERROR: something went wrong restoring that file. Please call for help."
+        & $LogAction (Get-Str 'FileRestoreErr')
         Remove-Item $RestoreFile -ErrorAction SilentlyContinue
         return $null
     }
@@ -456,21 +458,21 @@ function Invoke-DocsUpdate {
     $reachable = Test-NetConnection -ComputerName $GiteaHost -Port $GiteaPort `
                     -WarningAction SilentlyContinue -InformationLevel Quiet
     if (-not $reachable) {
-        Send-Log "Unreachable — connect to Netbird and try again." -IsWarning
+        Send-Log (Get-Str 'UpdateUnreachable') -IsWarning
         return $false
     }
 
     Send-Progress 25
-    Send-Log "Forcing local copy to match origin/main — any local changes will be discarded." -IsWarning
+    Send-Log (Get-Str 'UpdateForcing') -IsWarning
 
     Push-Location $RepoRoot
     try {
         git fetch origin 2>&1 | ForEach-Object { Send-Log $_ }
-        if ($LASTEXITCODE -ne 0) { Send-Log "git fetch failed (exit $LASTEXITCODE)" -IsWarning; return $false }
+        if ($LASTEXITCODE -ne 0) { Send-Log (Get-Str 'UpdateFetchFailed' -FormatArgs @($LASTEXITCODE)) -IsWarning; return $false }
 
         Send-Progress 50
         git reset --hard origin/main 2>&1 | ForEach-Object { Send-Log $_ }
-        if ($LASTEXITCODE -ne 0) { Send-Log "git reset failed (exit $LASTEXITCODE)" -IsWarning; return $false }
+        if ($LASTEXITCODE -ne 0) { Send-Log (Get-Str 'UpdateResetFailed' -FormatArgs @($LASTEXITCODE)) -IsWarning; return $false }
 
         git clean -fd 2>&1 | ForEach-Object { Send-Log $_ }
     } finally {
@@ -481,7 +483,7 @@ function Invoke-DocsUpdate {
     $desktop = [Environment]::GetFolderPath('Desktop')
     $shortcutPath = Join-Path $desktop 'Backup Helper.lnk'
     if (-not (Test-Path $shortcutPath)) {
-        Send-Log "Shortcut missing — regenerating."
+        Send-Log (Get-Str 'ShortcutMissing')
         & (Join-Path $ScriptRoot 'create-shortcut.ps1')
     }
 
