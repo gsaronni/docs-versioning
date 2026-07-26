@@ -112,8 +112,6 @@ $outputBox.BackColor = [System.Drawing.Color]::Black
 $outputBox.ForeColor = [System.Drawing.Color]::LightGreen
 $form.Controls.Add($outputBox)
 
-$AllButtons = @($btnBackup, $btnRestore, $btnFind)
-
 function Add-Output {
     param($text, $color = [System.Drawing.Color]::LightGreen)
     $outputBox.SelectionStart = $outputBox.TextLength

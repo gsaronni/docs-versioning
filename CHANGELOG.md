@@ -2,6 +2,16 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.2-beta 2026-07-26
+
+### Fixed
+- Update button could silently collide with Backup/Restore/Find: a duplicate `$AllButtons` array declaration in `backup-helper-launcher.ps1` was overwriting the one that included `$btnUpdate`, so it never got disabled/re-enabled alongside the other three. Since all operations share a single background runspace, clicking Update mid-Backup (or vice versa) would have silently orphaned whichever ran first.
+- `setup-scheduled-task.ps1 -Remove` only removed the "Daily Backup" task and exited before ever reaching the "Docs Update" task — running `-Remove` couldn't fully clean up both tasks in one call. Restructured so both removals happen together up front, and registration for each task is now independent (one task's drift/failure no longer blocks the other).
+- Update task's stored drift-detection signature said `"Monthly-Day1-09:00"` while the actual registered trigger was weekly-every-4-Sunday — cosmetic only (never affected behavior), but corrected to `"Weekly-4-Sunday-09:00"` so it doesn't mislead future debugging.
+
+### Verified
+- `.\setup-scheduled-task.ps1 -Test` registers both "Daily Backup (TEST)" and "Docs Update (TEST)"; `-Test -Remove` now removes both in one call — confirmed via live Task Scheduler runs on dev-machine, not just code review.
+
 ## 1.0.1-beta 2026-07-26
 
 ### Added
