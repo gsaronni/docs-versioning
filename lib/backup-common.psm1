@@ -24,7 +24,7 @@ function Import-BackupConfig {
     $cfg = Import-PowerShellDataFile $ConfigPath
 
     if ([string]::IsNullOrWhiteSpace($cfg.SourcePath)) {
-        $cfg.SourcePath = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "2026"
+        throw (Get-Str 'SourcePathNotSet')
     }
     if ([string]::IsNullOrWhiteSpace($cfg.PasswordFile)) {
         $cfg.PasswordFile = Join-Path $ScriptRoot "..\etc\restic-repo.key"

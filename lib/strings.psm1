@@ -40,6 +40,7 @@ en = @{
     SomethingWrong   = "Something went wrong:`r`n`r`n{0}"
     ErrorTitle       = "Error"
     CallForHelp      = "Something went wrong. Please call for help rather than trying more things."
+    SourcePathNotSet = "SourcePath is not set in the config file. This must be set explicitly — there is no default."
 
     # --- backup button ---
     CantBackupTitle  = "Can't Back Up Yet"
@@ -149,6 +150,7 @@ it = @{
     SomethingWrong   = "Qualcosa è andato storto:`r`n`r`n{0}"
     ErrorTitle       = "Errore"
     CallForHelp      = "Qui si smarrisce la retta via. Chiamate l'arcangelo, non tentate altro da soli."
+    SourcePathNotSet = "Il cammino d'origine non è impostato. Va scritto per certo — nessuna via è data per scontata."
 
     CantBackupTitle  = "Non Ancora Possibile"
     ResticMissing    = "Lo strumento del salvataggio non è installato."

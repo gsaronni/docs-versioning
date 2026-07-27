@@ -2,6 +2,19 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.5-beta 2026-07-27 (hotfix — found during deployment testing)
+
+### Changed
+- `SourcePath` in `backup-config.psd1` set to the real, deliberate value for deployment: `C:\Users\user\Documents` (whole Documents folder, not a yearly subfolder — confirmed intentional).
+- `ExternalDriveLabel` set to `Disk`, matching the actual factory label on the connected external drive (confirmed via `Get-Volume`).
+
+### Fixed
+- `Import-BackupConfig` no longer silently defaults `SourcePath` to `<Documents>\2026` when the config leaves it blank — that default risked backing up the wrong folder without anyone noticing. A missing `SourcePath` now throws an explicit, visible error instead.
+
+### Known gaps / next steps
+- `ExternalDriveLabel` is currently the drive's factory label, not a deliberately chosen one — if the drive is ever reformatted, relabeled, or replaced, this will need updating (fails silently/skips external sync if it doesn't match, no error).
+- First real Backup/external-sync/Restore/Find runs against production are the next step, not yet done.
+
 ## 1.0.4-beta 2026-07-26 (hotfix — found during deployment testing)
 
 ### Fixed
