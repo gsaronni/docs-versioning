@@ -2,6 +2,11 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.7-beta (dev) 2026-07-26
+
+### Added
+- Auto-restart on Update when the launcher file itself changed: `Invoke-DocsUpdate` now diffs `git rev-parse HEAD` before/after the reset, checks if `bin/backup-helper-launcher.ps1` was among the changed files, and if so, relaunches the GUI automatically 2 seconds after showing a one-line notice — no manual "please reopen the app" required. Uses a dedicated one-shot `Timer`, not a reuse of the existing poll timer, to keep the two concerns separate. Most updates (bugfixes in `backup-common.psm1`, translation tweaks, config changes) still apply live with zero interruption, since only a change to the launcher file itself needs a fresh window.
+
 ## 1.0.6-beta (dev) 2026-07-26
 
 ### Added

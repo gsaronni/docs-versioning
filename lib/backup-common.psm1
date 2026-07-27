@@ -469,6 +469,8 @@ function Invoke-DocsUpdate {
 
     Push-Location $RepoRoot
     try {
+        $oldHash = (git rev-parse HEAD).Trim()
+
         git fetch origin 2>&1 | ForEach-Object { Send-Log $_ }
         if ($LASTEXITCODE -ne 0) { Send-Log (Get-Str 'UpdateFetchFailed' -FormatArgs @($LASTEXITCODE)) -IsWarning; return $false }
 
@@ -477,6 +479,14 @@ function Invoke-DocsUpdate {
         if ($LASTEXITCODE -ne 0) { Send-Log (Get-Str 'UpdateResetFailed' -FormatArgs @($LASTEXITCODE)) -IsWarning; return $false }
 
         git clean -fd 2>&1 | ForEach-Object { Send-Log $_ }
+
+        $newHash = (git rev-parse HEAD).Trim()
+        if ($oldHash -ne $newHash) {
+            $changedFiles = git diff --name-only $oldHash $newHash
+            if ($changedFiles -contains "bin/backup-helper-launcher.ps1") {
+                & $LogAction "LAUNCHER_CHANGED:1"
+            }
+        }
     } finally {
         Pop-Location
     }

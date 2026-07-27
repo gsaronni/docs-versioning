@@ -204,6 +204,7 @@ $script:ActiveLogQueue = $null
 $script:ActiveOperationName = $null
 $script:ActiveBaseStatus = $null
 $script:ActiveRestoreTarget = $null
+$script:ActiveLauncherChanged = $false
 $script:SpinnerChars = @('|', '/', '-', '\')
 $script:SpinnerIndex = 0
 
@@ -224,6 +225,11 @@ function Receive-LogLine {
     }
     if ($Line -like "RESTORE_TARGET:*") {
         $script:ActiveRestoreTarget = $Line.Substring(15)
+        return
+    }
+
+    if ($Line -like "LAUNCHER_CHANGED:*") {
+        $script:ActiveLauncherChanged = $true
         return
     }
 
@@ -250,6 +256,7 @@ function Start-BackgroundOperation {
     $script:ActiveBaseStatus = if ($OperationName -eq "Search") { Get-Str 'BaseSearching' } else { Get-Str 'BaseWorking' }
     $statusLabel.Text = "$($script:ActiveBaseStatus)... $($script:SpinnerChars[0])"
     $script:ActiveRestoreTarget = $null
+    $script:ActiveLauncherChanged = $false
 
     if ($OperationName -eq "Search") {
         # restic find/snapshots return one complete document, not a
@@ -362,6 +369,21 @@ $pollTimer.Add_Tick({
                 $progressBar.Value = 100
                 $percentLabel.Text = "100%"
                 Add-Output (Get-Str 'OpCompleted' -FormatArgs @((Get-OpLabel $opName))) ([System.Drawing.Color]::White)
+                if ($opName -eq "Update" -and $script:ActiveLauncherChanged) {
+                    Add-Output (Get-Str 'RestartingApp') ([System.Drawing.Color]::Yellow)
+                    $relaunchArgs = @("-File", "`"$ScriptRoot\backup-helper-launcher.ps1`"")
+                    if ($Test) { $relaunchArgs += "-Test" }
+
+                    $restartTimer = New-Object System.Windows.Forms.Timer
+                    $restartTimer.Interval = 2000
+                    $restartTimer.Add_Tick({
+                        $restartTimer.Stop()
+                        Start-Process pwsh.exe -ArgumentList $relaunchArgs
+                        $form.Close()
+                    })
+                    $restartTimer.Start()
+                    return
+                }
                 if ($opName -eq "Restore" -and ($lastResult -is [string])) { Invoke-Item $lastResult }
             } else {
                 $statusLabel.Text = Get-Str 'StatusFailed'

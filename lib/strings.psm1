@@ -30,17 +30,18 @@ en = @{
     DlgCancel        = "Cancel"
 
     # --- search results ---
-    NothingToSearch  = "No backups are set up yet, nothing to search."
+    NothingToSearch      = "No backups are set up yet, nothing to search."
     NothingToSearchTitle = "Nothing to Search"
-    NoMatches        = "No files found. Search again?"
-    NoMatchesTitle   = "No Matches"
-    GridTitle        = "Found {0} match(es), select one or more (Ctrl/Shift-click) to restore"
+    NoMatches            = "No files found. Search again?"
+    NoMatchesTitle       = "No Matches"
+    GridTitle            = "Found {0} match(es), select one or more (Ctrl/Shift-click) to restore"
 
     # --- generic errors ---
     SomethingWrong   = "Something went wrong:`r`n`r`n{0}"
     ErrorTitle       = "Error"
     CallForHelp      = "Something went wrong. Please call for help rather than trying more things."
     SourcePathNotSet = "SourcePath is not set in the config file. This must be set explicitly — there is no default."
+    RestartingApp    = "The app itself was updated, restarting automatically..."
 
     # --- backup button ---
     CantBackupTitle  = "Can't Back Up Yet"
@@ -50,11 +51,11 @@ en = @{
     PasswordMissing  = "Password file not found: {0}"
 
     # --- restore button ---
-    CantRestoreTitle = "Can't Restore Yet"
-    ResticMissingCall = "The backup tool isn't installed. Please call for help."
-    NoBackupsYet     = "No backups exist yet, nothing to restore."
-    NotEnoughSpaceTitle = "Not Enough Space"
-    NotEnoughSpace   = "Not enough disk space to restore.`r`n`r`nNeeded (approx): {0} GB`r`nAvailable: {1} GB`r`n`r`nFree up space and try again."
+    CantRestoreTitle     = "Can't Restore Yet"
+    ResticMissingCall    = "The backup tool isn't installed. Please call for help."
+    NoBackupsYet         = "No backups exist yet, nothing to restore."
+    NotEnoughSpaceTitle  = "Not Enough Space"
+    NotEnoughSpace       = "Not enough disk space to restore.`r`n`r`nNeeded (approx): {0} GB`r`nAvailable: {1} GB`r`n`r`nFree up space and try again."
 
     # --- stop ---
     StopRequested    = "--- Stop requested, finishing current step... ---"
@@ -151,6 +152,7 @@ it = @{
     ErrorTitle       = "Errore"
     CallForHelp      = "Qui si smarrisce la retta via. Chiamate l'arcangelo, non tentate altro da soli."
     SourcePathNotSet = "Il cammino d'origine non è impostato. Va scritto per certo — nessuna via è data per scontata."
+    RestartingApp    = "Il programma stesso è mutato — mi rinnovo da solo..."
 
     CantBackupTitle  = "Non Ancora Possibile"
     ResticMissing    = "Lo strumento del salvataggio non è installato."
