@@ -27,7 +27,9 @@ Import-Module (Join-Path $ScriptRoot "..\lib\strings.psm1") -Force
 # =============================================================================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = Get-Str 'Title'
+$VersionPath = Join-Path $ScriptRoot "..\VERSION"
+$AppVersion = if (Test-Path $VersionPath) { (Get-Content $VersionPath -Raw).Trim() } else { "dev" }
+$form.Text = "$(Get-Str 'Title') — v$AppVersion"
 $form.Size = New-Object System.Drawing.Size(560, 500)
 $form.StartPosition = "CenterScreen"
 $form.MinimumSize = $form.Size

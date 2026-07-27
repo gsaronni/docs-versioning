@@ -2,6 +2,13 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.0.6-beta (dev) 2026-07-26
+
+### Added
+- `VERSION` file at repo root as the single source of truth for the app's displayed version — GUI title bar now reads "Custode dei Documenti — v{VERSION}" (or "Backup Helper — v{VERSION}" in `-Test`), read once at launch.
+- `bin/bump-version.ps1` — mechanical version bumping (`-Level Patch/Minor/Major`, `-Alpha`/`-Beta` mutually exclusive suffix flags). Deliberately does NOT auto-decide what kind of bump a change deserves — that's still a human judgment call, same as it is for every real semver-based project. The changelog's own `(dev)`/`(bugfix)`/`(hotfix)` tag, introduced this entry, carries that context instead of overloading the version string itself.
+- Auto-restart on Update when the launcher file itself changed: `Invoke-DocsUpdate` now diffs `git rev-parse HEAD` before/after the reset, checks if `bin/backup-helper-launcher.ps1` was among the changed files, and if so, relaunches the GUI automatically 2 seconds after showing a one-line notice — no manual "please reopen the app" required. Most updates (bugfixes in `backup-common.psm1`, translation tweaks, config changes) apply live with
+
 ## 1.0.5-beta 2026-07-27 (hotfix — found during deployment testing)
 
 ### Changed
