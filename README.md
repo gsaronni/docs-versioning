@@ -3,7 +3,7 @@
 [![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-5391FE?logo=powershell&logoColor=white)](https://github.com/PowerShell/PowerShell)
 [![restic](https://img.shields.io/badge/backend-restic-3E8AFB)](https://restic.net/)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Status](https://img.shields.io/badge/status-3-beta-yellow)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-1.0.0--beta-yellow)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 A simple, restic-based backup and restore tool for a non-technical user (originally built for my dad), with a plain point-and-click GUI on top of the same logic the command-line scripts use. Status: **1.0.0-beta** — see `CHANGELOG.md` for details.
