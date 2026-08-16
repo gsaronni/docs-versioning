@@ -92,9 +92,10 @@ Everything above supports a `-Test` switch, which points at `backup-config.test.
 - **Windows permission warning on restore**: you may see a message about a timestamp not being restorable on one folder. This is a real but harmless `SeRestorePrivilege` limitation (requires a fully elevated shell to fix) — your files are always restored completely and correctly regardless; this is not a real error.
 - **Registering a scheduled task the first time may need an elevated PowerShell window** — appears specific to creating a brand-new Task Scheduler folder; not needed for a machine where the "Personal Backups" folder already exists.
 
-## Status / what's not done yet
+## Status
 
-See `CHANGELOG.md` for the full history. As of 1.0.0-beta:
-- Not yet deployed to the real target machine — `SourcePath` still points at test data.
-- External-drive redundancy tested only with two folders on the same physical disk, not yet against a genuinely separate drive.
-- No automatic cleanup yet for old `Restored-Backup-*` / `Restored-File-*` folders accumulating on the Desktop.
+**1.1.0** — deployed and running on the real target machine. See `CHANGELOG.md` for full history.
+
+- `SourcePath` points at the real target folder (no longer test data).
+- External-drive redundancy tested and confirmed working against a genuinely separate physical drive.
+- No automatic cleanup yet for old `Restored-Backup-*` / `Restored-File-*` folders accumulating on the Desktop, known gap, not yet built.
