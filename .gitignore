@@ -1,1 +1,2 @@
 logs/*.log
+etc/restic-repo.key

@@ -2,7 +2,7 @@
     # Leave blank to default to <Documents>\2026 for whoever's Windows
     # account actually runs this — no username to know or hardcode.
     # Set a real path here only if you want something different.
-    SourcePath          = 'C:\Users\user\Documents'
+    SourcePath          = 'C:\Users\<username>\Documents'
 
     LocalRepoPath       = 'C:\Backup\repo-local'
 
@@ -10,7 +10,7 @@
     # (relative to wherever this project lives — also no username needed).
     PasswordFile        = ''
 
-    ExternalDriveLabel = 'Disk'
+    ExternalDriveLabel = 'BackupDrive'
     ExternalRepoSubpath = 'ResticRepo'
 
     KeepDaily           = 10
