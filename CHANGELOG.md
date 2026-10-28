@@ -2,6 +2,19 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.1.1 (dev) 2026-10-28
+
+### Added
+- `bin/publish-showcase.ps1`: one-way publication of the public GitHub showcase from this private repo. Exports the committed tree (`git archive HEAD`, never the working tree or history), removes excluded paths, applies whole-word replacements, verifies the export against every private term and the restic key content, then commits one `Sync showcase from vX.Y.Z` commit into the showcase clone. Push only with `-Push`; `-DryRun` restores the clone afterwards.
+- `etc/showcase-replacements.psd1`: exclude list, replacement table and verify terms for the publication. Excluded from the export itself.
+- `LICENSE` and the showcase `README.md`, previously present only on GitHub.
+
+### Changed
+- `.gitignore` now lists `etc/restic-repo.key`. No effect on this repo, where the key stays tracked by design; it makes the published `.gitignore` correct.
+
+### Fixed
+- The hardcoded Gitea IP no longer reaches the public showcase. It remains hardcoded in `backup-common.psm1`; moving it to a config key is the next change.
+
 ## 1.0.7-beta (dev) 2026-07-26
 
 ### Added
@@ -18,7 +31,7 @@ All notable changes to the docs-versioning project are documented here. Format l
 
 ### Changed
 - `SourcePath` in `backup-config.psd1` set to the real, deliberate value for deployment: `C:\Users\user\Documents` (whole Documents folder, not a yearly subfolder — confirmed intentional).
-- `ExternalDriveLabel` set to `Disk`, matching the actual factory label on the connected external drive (confirmed via `Get-Volume`).
+- `ExternalDriveLabel` set to `ExternalDisk`, matching the actual factory label on the connected external drive (confirmed via `Get-Volume`).
 
 ### Fixed
 - `Import-BackupConfig` no longer silently defaults `SourcePath` to `<Documents>\2026` when the config leaves it blank — that default risked backing up the wrong folder without anyone noticing. A missing `SourcePath` now throws an explicit, visible error instead.
