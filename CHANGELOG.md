@@ -2,6 +2,22 @@
 
 All notable changes to the docs-versioning project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.1.2 (dev) 2026-10-29
+
+### Added
+- `publish-showcase.ps1 -Release`: annotated tag `vX.Y.Z` on both repos, GitHub release created with `gh` from the anonymised changelog section, Gitea release created with `tea` when installed.
+- `Identity` in `etc/showcase-replacements.psd1`: every showcase commit and tag is authored with it, regardless of the machine's git config. The work email domain added as a verify term.
+- `ROADMAP.md` (features, published) and `ROADMAP.private.md` (operations, excluded from publishing).
+
+### Changed
+- README: release badge, current folder structure and template name, `SourcePath` has no default, new section on how the public copy is published; stale status section removed.
+- `publish-showcase.ps1` refuses to run unless the showcase clone sits exactly on its remote branch.
+
+### Fixed
+- Verify matched replacement terms as substrings, so a short name flagged any longer word containing it; it now uses the same word boundaries as the replacement.
+- The excluded-path check never matched on Windows (backslash versus slash).
+- Public GitHub history rewritten: work email replaced by the personal identity, old LAN address and leftover placeholders replaced, Sublime project files removed from all commits.
+
 ## 1.1.1 (dev) 2026-10-28
 
 ### Added
